@@ -64,8 +64,8 @@ const TABS: TabDef[] = [
   },
   {
     key: "history",
-    label: "SQLITE",
-    shortLabel: "SQLite",
+    label: "RIWAYAT",
+    shortLabel: "Riwayat",
     icon: "/pixel-icons/floppy_disk.png",
     accent: "#4fc4a8",
   },

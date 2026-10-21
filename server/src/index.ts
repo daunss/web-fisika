@@ -12,15 +12,18 @@ const clientDistPath = process.env.CLIENT_DIST_PATH
   ? resolve(process.cwd(), process.env.CLIENT_DIST_PATH)
   : resolve(import.meta.dir, "../../client/dist");
 const corsOrigin = process.env.CORS_ORIGIN === "*" ? true : (process.env.CORS_ORIGIN || true);
+const enableSwagger = process.env.ENABLE_SWAGGER === "true";
 
-const app = new Elysia()
+let app = new Elysia()
   .use(
     cors({
       origin: corsOrigin,
       methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     })
-  )
-  .use(
+  );
+
+if (enableSwagger) {
+  app = app.use(
     swagger({
       documentation: {
         info: {
@@ -35,17 +38,14 @@ const app = new Elysia()
         ],
       },
     })
-  )
+  );
+}
 
-
-  // Health check
+app = app
+  // Health check (Clean & minimal)
   .get("/api/health", () => ({
     status: "online",
     timestamp: new Date().toISOString(),
-    runtime: "Bun " + Bun.version,
-    framework: "Elysia.js",
-    database: "SQLite (Native bun:sqlite)",
-    theme: "Pixel GLB Sci-Fi",
   }))
 
   // --- SIMULATION ROUTES ---
@@ -221,7 +221,10 @@ if (existsSync(clientDistPath)) {
 
 app.listen({ port: PORT, hostname: HOST }, () => {
   const displayHost = HOST === "0.0.0.0" ? "localhost" : HOST;
-  console.log(`🚀 Server Fisika GLB (Elysia + SQLite) menyala di: http://${displayHost}:${PORT}`);
-  console.log(`📑 Dokumentasi Swagger API aktif di: http://${displayHost}:${PORT}/swagger`);
+  console.log(`🚀 Server Fisika GLB menyala di: http://${displayHost}:${PORT}`);
+  if (enableSwagger) {
+    console.log(`📑 Dokumentasi Swagger API aktif di: http://${displayHost}:${PORT}/swagger`);
+  }
 });
+
 

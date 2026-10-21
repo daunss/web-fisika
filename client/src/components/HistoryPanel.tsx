@@ -111,10 +111,10 @@ export const HistoryPanel: React.FC = () => {
           <History color="#f6c453" size={22} />
           <div>
             <h3 style={{ fontFamily: "var(--font-ui)", fontSize: "0.75rem", color: "#fbf6e9", fontWeight: "bold" }}>
-              RIWAYAT SIMULASI FISIKA DI SQLITE (fisika.db)
+              RIWAYAT SIMULASI FISIKA (LOG PENGUJIAN)
             </h3>
             <p style={{ fontFamily: "var(--font-mono)", fontSize: "1rem", color: "#8ea3c9" }}>
-              Setiap kali Anda menekan tombol 'SIMPAN RUN', parameter dan hasil kalkulasi tersimpan permanen di database lokal
+              Setiap kali Anda menekan tombol 'SIMPAN RUN', parameter dan hasil kalkulasi otomatis tercatat di log riwayat
             </p>
           </div>
         </div>
@@ -154,7 +154,7 @@ export const HistoryPanel: React.FC = () => {
               {loading ? (
                 <tr>
                   <td colSpan={10} style={{ textAlign: "center", padding: "28px", color: "#8ea3c9", fontFamily: "var(--font-ui)", fontSize: "0.7rem" }}>
-                    MEMUAT DATA DARI SQLITE...
+                    MEMUAT DATA RIWAYAT...
                   </td>
                 </tr>
               ) : history.length === 0 ? (
@@ -164,7 +164,7 @@ export const HistoryPanel: React.FC = () => {
                       BELUM ADA RIWAYAT SIMULASI
                     </div>
                     <div style={{ fontFamily: "var(--font-mono)", fontSize: "0.95rem" }}>
-                      Jalankan simulator di Tab 01 lalu tekan tombol 'SIMPAN RUN' untuk menyimpan data uji coba ke SQLite.
+                      Jalankan simulator di Tab 01 lalu tekan tombol 'SIMPAN RUN' untuk menyimpan data uji coba ke log riwayat.
                     </div>
                   </td>
                 </tr>

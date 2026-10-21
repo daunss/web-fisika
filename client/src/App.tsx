@@ -30,19 +30,13 @@ export const App: React.FC = () => {
   const [scanlinesEnabled, setScanlinesEnabled] = useState<boolean>(true);
   const [isNightMode, setIsNightMode] = useState<boolean>(false);
   const [sfxEnabled, setSfxEnabled] = useState<boolean>(true);
-  const [dbStatus, setDbStatus] = useState<"online" | "connecting" | "offline">("connecting");
   const [experiments, setExperiments] = useState<ExperimentItem[]>([]);
   const [isLoadingExp, setIsLoadingExp] = useState<boolean>(false);
 
   const lastTimeRef = useRef<number>(performance.now());
 
-  // Check Backend Health & Load Initial Data
+  // Load Initial Practical Data
   useEffect(() => {
-    fetch(`${API_BASE}/api/health`)
-      .then((res) => res.json())
-      .then(() => setDbStatus("online"))
-      .catch(() => setDbStatus("offline"));
-
     fetchExperiments();
   }, []);
 
@@ -148,10 +142,10 @@ export const App: React.FC = () => {
       const data = await res.json();
       if (data.success) {
         sound.playSuccess();
-        alert(`★ Data simulasi #${data.id} berhasil disimpan ke SQLite!`);
+        alert(`★ Data simulasi #${data.id} berhasil disimpan ke Riwayat!`);
       }
     } catch (e) {
-      alert("Gagal menyimpan ke backend SQLite.");
+      alert("Gagal menyimpan data simulasi.");
       console.error(e);
     } finally {
       setIsSaving(false);
@@ -192,7 +186,6 @@ export const App: React.FC = () => {
         isFinished={isFinished}
         timeCurrent={timeCurrent}
         timeTarget={timeTarget}
-        dbStatus={dbStatus}
         scanlinesEnabled={scanlinesEnabled}
         onToggleScanlines={() => {
           sound.playClick();
@@ -276,10 +269,10 @@ export const App: React.FC = () => {
               setActiveTab("history");
             }}
             className={`pixel-tab-item ${activeTab === "history" ? "active" : ""}`}
-            title="Tab 6: Riwayat Simulasi Database SQLite"
+            title="Tab 6: Log Riwayat Simulasi"
           >
             <img src="/pixel-icons/floppy_disk.png" alt="Riwayat" className="pixel-tab-icon" />
-            <span>[ 06 ] SQLITE</span>
+            <span>[ 06 ] RIWAYAT</span>
           </button>
         </div>
 

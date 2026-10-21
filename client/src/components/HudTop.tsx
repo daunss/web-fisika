@@ -1,13 +1,12 @@
-import { Database, Sparkles, Volume2, VolumeX, Sun, Moon, ExternalLink } from "lucide-react";
+import { Sparkles, Volume2, VolumeX, Sun, Moon } from "lucide-react";
 import { sound } from "../utils/audio";
-import { API_BASE } from "../utils/config";
+
 
 interface HudTopProps {
   isRunning: boolean;
   isFinished: boolean;
   timeCurrent: number;
   timeTarget: number;
-  dbStatus: "online" | "connecting" | "offline";
   scanlinesEnabled: boolean;
   onToggleScanlines: () => void;
   isNightMode: boolean;
@@ -21,7 +20,6 @@ export const HudTop: React.FC<HudTopProps> = ({
   isFinished,
   timeCurrent,
   timeTarget,
-  dbStatus,
   scanlinesEnabled,
   onToggleScanlines,
   isNightMode,
@@ -144,31 +142,6 @@ export const HudTop: React.FC<HudTopProps> = ({
             <Sparkles size={12} />
             CRT: {scanlinesEnabled ? "ON" : "OFF"}
           </button>
-
-          {/* SQLite Status & Swagger Link */}
-          <a
-            href={`${API_BASE}/swagger`}
-            target="_blank"
-            rel="noreferrer"
-            className="pixel-btn"
-            style={{
-              padding: "6px 10px",
-              minHeight: "30px",
-              fontSize: "0.6rem",
-              textDecoration: "none",
-              borderColor: dbStatus === "online" ? "#2f8f7a" : "#c8433f",
-            }}
-            title="Buka Dokumentasi Swagger API Elysia"
-          >
-            <Database size={12} color={dbStatus === "online" ? "#4fc4a8" : "#ef6f5e"} />
-            <span style={{ color: "#8ea3c9" }}>
-              SQLITE:{" "}
-              <strong style={{ color: dbStatus === "online" ? "#4fc4a8" : "#ef6f5e" }}>
-                {dbStatus.toUpperCase()}
-              </strong>
-            </span>
-            <ExternalLink size={10} color="#8ea3c9" />
-          </a>
         </div>
       </div>
     </header>

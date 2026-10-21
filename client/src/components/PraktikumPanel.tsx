@@ -184,7 +184,7 @@ export const PraktikumPanel: React.FC<PraktikumPanelProps> = ({
 
           <div style={{ marginTop: "12px", padding: "8px", backgroundColor: "rgba(43, 51, 80, 0.3)", border: "1px solid #2b3350", fontSize: "0.6rem", color: "#8ea3c9", fontFamily: "var(--font-ui)", display: "flex", alignItems: "center", gap: "6px" }}>
             <AlertCircle size={13} color="#f6c453" />
-            Tersimpan otomatis di SQLite (fisika.db)
+            Data praktikum tersimpan otomatis di sistem
           </div>
         </div>
 
@@ -267,7 +267,7 @@ export const PraktikumPanel: React.FC<PraktikumPanelProps> = ({
               className="pixel-btn pixel-btn-mint"
               style={{ width: "100%", marginTop: "4px" }}
             >
-              <PlusCircle size={14} /> {submitting ? "PROSES..." : "TAMBAH PENGUKURAN KE SQLITE"}
+              <PlusCircle size={14} /> {submitting ? "PROSES..." : "TAMBAH HASIL PENGUKURAN"}
             </button>
           </form>
         </div>

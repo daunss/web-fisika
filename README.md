@@ -1,9 +1,13 @@
 # 🚗 SIMULATOR FISIKA GLB & PENGOLAH DATA PRAKTIKUM
 ### Proyek Project-Based Learning (PBL) 1 • Mata Kuliah Fisika Dasar • Program Studi Informatika
 
+🌐 **Live Production Website**: [**https://fisika.daunscode.com**](https://fisika.daunscode.com)  
+📑 **Swagger OpenAPI Docs**: [**https://fisika.daunscode.com/swagger**](https://fisika.daunscode.com/swagger)
+
 Aplikasi web interaktif berkinerja tinggi yang mengintegrasikan **Konsep Fisika Dasar (Kinematika - Gerak Lurus Beraturan / GLB)** dengan **Teknologi Informatika Modern (Bun, Elysia.js, SQLite, React, HTML5 Canvas 60 FPS)** dan **Analisis Data Praktikum Riil**.
 
 Desain antarmuka mengadopsi estetika **Cyber-Retro Pixel Art Sci-Fi** yang selaras 100% dengan video pembelajaran berbasis AI [pixel-glb-1080p.mp4](file:///home/daun/projek-konten/pixel-fisika-video/out/pixel-glb-1080p.mp4).
+
 
 ---
 

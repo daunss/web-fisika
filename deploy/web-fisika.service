@@ -1,0 +1,18 @@
+[Unit]
+Description=Server Web Fisika GLB (Elysia.js + SQLite)
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/var/www/web-fisika
+EnvironmentFile=/var/www/web-fisika/.env
+ExecStart=/root/.bun/bin/bun run server/src/index.ts
+Restart=always
+RestartSec=3
+
+# Resource & security limits
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target

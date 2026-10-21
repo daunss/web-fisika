@@ -1,0 +1,79 @@
+name: CI/CD Deploy to VPS
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  test-and-build:
+    name: Test & Build Validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Bun Runtime
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install Dependencies
+        run: |
+          bun install
+          cd client && bun install && cd ..
+          cd server && bun install && cd ..
+
+      - name: Validate TypeScript & Build Frontend
+        env:
+          VITE_API_BASE_URL: ""
+        run: |
+          cd client && bun run build
+
+  deploy:
+    name: Deploy to VPS via SSH
+    needs: test-and-build
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - name: Execute Remote SSH Commands on VPS
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT || 22 }}
+          script: |
+            set -e
+            echo "🚀 [CI/CD] Memulai pembaruan aplikasi di VPS..."
+            
+            # Masuk ke direktori repositori di VPS
+            TARGET_DIR="${{ secrets.VPS_TARGET_DIR || '/var/www/web-fisika' }}"
+            cd "$TARGET_DIR"
+            
+            # Tarik kode terbaru dari GitHub main branch
+            git fetch origin main
+            git reset --hard origin/main
+            
+            # Ekspor PATH agar bun terdeteksi di sesi non-interaktif
+            export PATH="$HOME/.bun/bin:/usr/local/bin:$PATH"
+            
+            # Install dependensi & build ulang frontend
+            bun install
+            cd client && bun install && bun run build && cd ..
+            cd server && bun install && cd ..
+            
+            # Restart service aplikasi (mendukung systemd maupun PM2)
+            if systemctl is-active --quiet web-fisika 2>/dev/null; then
+              echo "🔄 Me-restart systemd service (web-fisika)..."
+              sudo systemctl restart web-fisika
+            elif command -v pm2 &> /dev/null; then
+              echo "🔄 Me-restart PM2 instance (web-fisika)..."
+              pm2 restart web-fisika || pm2 start server/src/index.ts --name web-fisika --interpreter bun
+            else
+              echo "ℹ️ Systemd/PM2 belum aktif, memulai server di background..."
+              nohup bun run server/src/index.ts > server.log 2>&1 &
+            fi
+            
+            echo "✅ [CI/CD] Deploy selesai dengan sukses!"

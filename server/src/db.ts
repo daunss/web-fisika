@@ -1,8 +1,11 @@
 import { Database } from "bun:sqlite";
 import { resolve } from "path";
 
-const dbPath = resolve(import.meta.dir, "../fisika.db");
+const dbPath = process.env.DB_PATH
+  ? resolve(process.cwd(), process.env.DB_PATH)
+  : resolve(import.meta.dir, "../fisika.db");
 export const db = new Database(dbPath, { create: true });
+
 
 // Aktifkan WAL mode untuk performa baca/tulis optimal
 db.run("PRAGMA journal_mode = WAL;");

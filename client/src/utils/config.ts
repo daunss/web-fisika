@@ -1,5 +1,10 @@
-// Dynamic API base URL: defaults to relative path in production, and localhost:3000 during Vite dev on port 5173
-export const API_BASE =
-  typeof window !== "undefined" && window.location.port === "5173"
-    ? "http://localhost:3000"
-    : "";
+/**
+ * Konfigurasi URL Base Backend API diambil langsung dari Environment Variable (.env).
+ * Ubah VITE_API_BASE_URL di file .env untuk menghubungkan ke backend tujuan.
+ * Nilai default adalah nilai dari VITE_API_BASE_URL di .env (misal: http://localhost:3000),
+ * atau string kosong "" (relative path) jika di-host satu origin di server produksi.
+ */
+const envApiUrl = import.meta.env.VITE_API_BASE_URL;
+
+export const API_BASE = (typeof envApiUrl === "string" ? envApiUrl : "").trim();
+

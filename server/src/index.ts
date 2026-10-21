@@ -6,13 +6,17 @@ import { db, seedDefaultExperiments } from "./db";
 import { existsSync } from "fs";
 import { resolve } from "path";
 
-const PORT = Number(process.env.PORT) || 3000;
-const clientDistPath = resolve(import.meta.dir, "../../client/dist");
+const PORT = Number(process.env.PORT || process.env.BACKEND_PORT) || 3000;
+const HOST = process.env.HOST || process.env.BACKEND_HOST || "0.0.0.0";
+const clientDistPath = process.env.CLIENT_DIST_PATH
+  ? resolve(process.cwd(), process.env.CLIENT_DIST_PATH)
+  : resolve(import.meta.dir, "../../client/dist");
+const corsOrigin = process.env.CORS_ORIGIN === "*" ? true : (process.env.CORS_ORIGIN || true);
 
 const app = new Elysia()
   .use(
     cors({
-      origin: true,
+      origin: corsOrigin,
       methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     })
   )
@@ -32,6 +36,7 @@ const app = new Elysia()
       },
     })
   )
+
 
   // Health check
   .get("/api/health", () => ({
@@ -214,7 +219,9 @@ if (existsSync(clientDistPath)) {
   app.get("/", () => Bun.file(resolve(clientDistPath, "index.html")));
 }
 
-app.listen(PORT, () => {
-  console.log(`🚀 Server Fisika GLB (Elysia + SQLite) menyala di: http://localhost:${PORT}`);
-  console.log(`📑 Dokumentasi Swagger API aktif di: http://localhost:${PORT}/swagger`);
+app.listen({ port: PORT, hostname: HOST }, () => {
+  const displayHost = HOST === "0.0.0.0" ? "localhost" : HOST;
+  console.log(`🚀 Server Fisika GLB (Elysia + SQLite) menyala di: http://${displayHost}:${PORT}`);
+  console.log(`📑 Dokumentasi Swagger API aktif di: http://${displayHost}:${PORT}/swagger`);
 });
+

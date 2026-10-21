@@ -1,0 +1,25 @@
+{
+  "name": "web-fisika-glb",
+  "version": "1.0.0",
+  "description": "Simulasi Fisika Gerak Lurus Beraturan (GLB) - Project-Based Learning Fisika Dasar Informatika",
+  "scripts": {
+    "dev:server": "cd server && bun run --watch src/index.ts",
+    "dev:client": "cd client && bun run dev",
+    "dev": "bun --filter \"*\" dev 2>/dev/null || (cd server && bun run src/index.ts & cd client && bun run dev)",
+    "build": "cd client && bun run build",
+    "start": "cd server && bun run src/index.ts"
+  },
+  "keywords": [
+    "fisika",
+    "kinematika",
+    "glb",
+    "elysia",
+    "bun",
+    "sqlite",
+    "react",
+    "vite",
+    "pixel-art"
+  ],
+  "author": "Kelompok Fisika Informatika",
+  "license": "MIT"
+}

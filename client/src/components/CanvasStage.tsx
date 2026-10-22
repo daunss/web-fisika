@@ -1,19 +1,20 @@
 import React, { useEffect, useRef, useState } from "react";
 import { C, F } from "../theme";
 import { sound } from "../utils/audio";
+import { num } from "../utils/format";
+import { sweepOnce } from "../utils/motion";
 
 export type VehicleType = "car" | "train" | "probe" | "lab";
 
 interface CanvasStageProps {
-  v: number; // m/s
-  s0: number; // m
-  timeCurrent: number; // s
-  timeTarget: number; // s
+  v: number;
+  s0: number;
+  timeCurrent: number;
+  timeTarget: number;
   isRunning: boolean;
   isNightMode: boolean;
   vehicleType: VehicleType;
   onSelectVehicle: (type: VehicleType) => void;
-  onReset: () => void;
 }
 
 interface Particle {
@@ -26,6 +27,30 @@ interface Particle {
   color: string;
 }
 
+interface Assets {
+  [key: string]: HTMLImageElement;
+}
+
+const VEHICLES: { key: VehicleType; label: string; short: string }[] = [
+  { key: "car", label: "Mobil · Jalan raya", short: "Mobil" },
+  { key: "train", label: "Maglev · Kota", short: "Maglev" },
+  { key: "probe", label: "Probe · Angkasa", short: "Probe" },
+  { key: "lab", label: "Troli · Lab", short: "Troli" },
+];
+
+const ASSET_SOURCES: [string, string][] = [
+  ["bg_highway", "/assets/bg_highway.png"],
+  ["bg_road", "/assets/bg_road.png"],
+  ["bg_city", "/assets/bg_city.png"],
+  ["bg_space", "/assets/bg_space.png"],
+  ["bg_lab", "/assets/bg_lab.png"],
+  ["spr_car", "/assets/spr_car.png"],
+  ["spr_train", "/assets/spr_train.png"],
+  ["spr_probe", "/assets/spr_probe.png"],
+  ["spr_mascot", "/assets/spr_mascot.png"],
+  ["spr_crate", "/assets/spr_crate.png"],
+];
+
 export const CanvasStage: React.FC<CanvasStageProps> = ({
   v,
   s0,
@@ -37,54 +62,64 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
   onSelectVehicle,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const containerRef = useRef<HTMLDivElement | null>(null);
+  const sweepRef = useRef<HTMLDivElement | null>(null);
   const particlesRef = useRef<Particle[]>([]);
-
-  // Asset image cache
-  const imagesRef = useRef<{ [key: string]: HTMLImageElement }>({});
+  const imagesRef = useRef<Assets>({});
   const [assetsLoaded, setAssetsLoaded] = useState(false);
 
-  // Realtime physics calculation
+  // Nilai live untuk render loop. Loop dipasang sekali; perubahan state tidak
+  // boleh membatalkan dan memasang ulang requestAnimationFrame tiap frame.
+  const live = useRef({
+    v,
+    s0,
+    timeCurrent,
+    timeTarget,
+    isRunning,
+    isNightMode,
+    vehicleType,
+    assetsLoaded,
+  });
+
+  useEffect(() => {
+    live.current = {
+      v,
+      s0,
+      timeCurrent,
+      timeTarget,
+      isRunning,
+      isNightMode,
+      vehicleType,
+      assetsLoaded,
+    };
+  });
+
   const sCurrent = s0 + v * timeCurrent;
   const sTarget = s0 + v * timeTarget;
+  const progress = timeTarget > 0 ? Math.min(100, Math.max(0, (timeCurrent / timeTarget) * 100)) : 0;
 
-  // Preload authentic pixel art assets
   useEffect(() => {
-    const assetList = [
-      { key: "bg_highway", src: "/assets/bg_highway.png" },
-      { key: "bg_road", src: "/assets/bg_road.png" },
-      { key: "bg_city", src: "/assets/bg_city.png" },
-      { key: "bg_space", src: "/assets/bg_space.png" },
-      { key: "bg_lab", src: "/assets/bg_lab.png" },
-      { key: "spr_car", src: "/assets/spr_car.png" },
-      { key: "spr_train", src: "/assets/spr_train.png" },
-      { key: "spr_probe", src: "/assets/spr_probe.png" },
-      { key: "spr_mascot", src: "/assets/spr_mascot.png" },
-      { key: "spr_crate", src: "/assets/spr_crate.png" },
-    ];
+    let cancelled = false;
+    let loaded = 0;
 
-    let loadedCount = 0;
-    assetList.forEach(({ key, src }) => {
+    ASSET_SOURCES.forEach(([key, src]) => {
       const img = new Image();
-      img.src = src;
+      const done = () => {
+        loaded += 1;
+        if (!cancelled && loaded === ASSET_SOURCES.length) setAssetsLoaded(true);
+      };
       img.onload = () => {
         imagesRef.current[key] = img;
-        loadedCount++;
-        if (loadedCount === assetList.length) {
-          setAssetsLoaded(true);
-        }
+        done();
       };
-      img.onerror = () => {
-        // Fallback gracefully
-        loadedCount++;
-        if (loadedCount === assetList.length) {
-          setAssetsLoaded(true);
-        }
-      };
+      img.onerror = done;
+      img.src = src;
     });
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  // Continuous Engine Hum synchronization
   useEffect(() => {
     if (isRunning && v > 0) {
       sound.startEngineHum(v);
@@ -96,324 +131,298 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
     };
   }, [isRunning, v]);
 
-  // Main 60 FPS Canvas Physics Rendering Loop
+  useEffect(() => {
+    if (isRunning) sweepOnce(sweepRef.current);
+  }, [isRunning]);
+
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const ctx = canvas.getContext("2d");
+    const ctx = canvas.getContext("2d", { alpha: false });
     if (!ctx) return;
 
-    let animationId: number;
+    let frame = 0;
 
     const render = () => {
+      const state = live.current;
       const width = canvas.width;
       const height = canvas.height;
+      const sNow = state.s0 + state.v * state.timeCurrent;
+      const sGoal = state.s0 + state.v * state.timeTarget;
 
-      // Ensure crisp pixel art rendering (Anti-Aliasing disabled)
       ctx.imageSmoothingEnabled = false;
 
-      // Select active background image and vehicle sprite based on vehicleType
       let bgKey = "bg_highway";
       let sprKey = "spr_car";
       let trackY = height * 0.72;
-      let spriteW = 120;
-      let spriteH = 60;
+      let spriteW = 132;
+      let spriteH = 66;
 
-      if (vehicleType === "car") {
-        bgKey = isNightMode ? "bg_highway" : "bg_road";
-        sprKey = "spr_car";
+      if (state.vehicleType === "car") {
+        bgKey = state.isNightMode ? "bg_highway" : "bg_road";
         trackY = height * 0.72;
-        spriteW = 60 * 2.2;
-        spriteH = 30 * 2.2;
-      } else if (vehicleType === "train") {
+        spriteW = 132;
+        spriteH = 66;
+      } else if (state.vehicleType === "train") {
         bgKey = "bg_city";
         sprKey = "spr_train";
         trackY = height * 0.68;
-        spriteW = 220 * 1.5;
-        spriteH = 42 * 1.5;
-      } else if (vehicleType === "probe") {
+        spriteW = 330;
+        spriteH = 63;
+      } else if (state.vehicleType === "probe") {
         bgKey = "bg_space";
         sprKey = "spr_probe";
         trackY = height * 0.52;
-        spriteW = 34 * 2.6;
-        spriteH = 22 * 2.6;
-      } else if (vehicleType === "lab") {
+        spriteW = 88;
+        spriteH = 57;
+      } else if (state.vehicleType === "lab") {
         bgKey = "bg_lab";
         sprKey = "spr_mascot";
         trackY = height * 0.74;
-        spriteW = 48 * 2.0;
-        spriteH = 24 * 2.0;
+        spriteW = 96;
+        spriteH = 48;
       }
 
       const bgImg = imagesRef.current[bgKey];
       const sprImg = imagesRef.current[sprKey];
 
-      // --- 1. PARALLAX SEAMLESS BACKGROUND SCROLLING ---
+      // 1. Latar paralaks
       if (bgImg && bgImg.complete && bgImg.naturalWidth > 0) {
         const bgAspect = bgImg.naturalWidth / bgImg.naturalHeight;
-        const targetBgW = height * bgAspect;
+        const tileW = height * bgAspect;
+        const factor = state.vehicleType === "probe" ? 0.25 : 0.8;
+        const offset = (((sNow * 18 * factor) % tileW) + tileW) % tileW;
 
-        // Background scroll speed is proportional to velocity
-        const scrollFactor = vehicleType === "probe" ? 0.25 : 0.8;
-        const bgOffset = ((sCurrent * 18 * scrollFactor) % targetBgW + targetBgW) % targetBgW;
-
-        // Draw 3 seamless tiles so canvas is completely covered
         for (let tile = -1; tile <= 2; tile++) {
-          const drawX = tile * targetBgW - bgOffset;
-          ctx.drawImage(bgImg, drawX, 0, targetBgW + 1, height);
+          ctx.drawImage(bgImg, tile * tileW - offset, 0, tileW + 1, height);
         }
       } else {
-        // High-aesthetic solid retro sky fallback
-        ctx.fillStyle = isNightMode ? "#0b0d17" : "#1d2338";
+        ctx.fillStyle = state.isNightMode ? C.void : C.deep;
         ctx.fillRect(0, 0, width, height);
       }
 
-      // --- 2. RETRO DITHERING / NIGHT AMBIENT TINT ---
-      if (isNightMode && vehicleType !== "probe") {
-        ctx.fillStyle = "rgba(11, 13, 23, 0.4)";
+      // 2. Tint malam
+      if (state.isNightMode && state.vehicleType !== "probe") {
+        ctx.fillStyle = "rgba(11, 13, 23, 0.42)";
         ctx.fillRect(0, 0, width, height);
       }
 
-      // --- 3. GROUND / TRACK / GUIDE RAIL ---
-      if (vehicleType !== "probe") {
-        ctx.fillStyle = "rgba(11, 13, 23, 0.85)";
+      const screenX = width * 0.32;
+      const screenY = trackY - spriteH * 0.85;
+
+      // 3. Lintasan + penanda meter
+      if (state.vehicleType !== "probe") {
+        ctx.fillStyle = "rgba(11, 13, 23, 0.86)";
         ctx.fillRect(0, trackY + 8, width, height - (trackY + 8));
 
-        // Top curb highlight
-        ctx.fillStyle = vehicleType === "train" ? C.blue : vehicleType === "lab" ? C.mint : C.steel;
+        ctx.fillStyle =
+          state.vehicleType === "train" ? C.blue : state.vehicleType === "lab" ? C.mint : C.steel;
         ctx.fillRect(0, trackY + 6, width, 3);
 
-        // Track Measurement Metre Markers
-        const metrePixelDist = 18;
-        const screenCarX = width * 0.32;
-        const baseMark = Math.floor((sCurrent - 40) / 10) * 10;
+        const metrePx = 18;
+        const baseMark = Math.floor((sNow - 40) / 10) * 10;
 
         for (let m = baseMark; m <= baseMark + 120; m += 10) {
           if (m < 0) continue;
-          const markerX = screenCarX + (m - sCurrent) * metrePixelDist;
-          if (markerX >= -40 && markerX <= width + 40) {
-            const isTargetFlag = Math.abs(m - sTarget) < 5;
+          const markerX = screenX + (m - sNow) * metrePx;
+          if (markerX < -40 || markerX > width + 40) continue;
 
-            // Metre tick line
-            ctx.fillStyle = isTargetFlag ? C.mint : C.slate;
-            ctx.fillRect(markerX, trackY + 9, 2, 8);
+          const isGoal = Math.abs(m - sGoal) < 5;
+          ctx.fillStyle = isGoal ? C.mint : C.slate;
+          ctx.fillRect(markerX, trackY + 9, 2, 8);
 
-            // Metre label text
-            ctx.font = `8px ${F.mono}`;
-            ctx.fillStyle = isTargetFlag ? C.mint : C.mist;
-            ctx.fillText(`${m}m`, markerX - 8, trackY + 28);
+          ctx.font = `8px ${F.mono}`;
+          ctx.fillStyle = isGoal ? C.mint : C.mist;
+          ctx.fillText(`${m}m`, markerX - 8, trackY + 28);
 
-            // Checkered Finish Banner at target
-            if (isTargetFlag) {
-              drawFinishGate(ctx, markerX, trackY, m);
-            }
-          }
+          if (isGoal) drawFinishGate(ctx, markerX, trackY, m);
         }
 
-        // Ticker Tape Dots (Physics Laboratory Simulation Feature)
-        // In GLB, constant velocity creates strictly equidistant dots!
-        if (vehicleType === "lab" || vehicleType === "car") {
-          ctx.fillStyle = "rgba(232, 227, 211, 0.9)";
-          const baseDot = Math.floor((sCurrent - 20) / 2) * 2;
+        if (state.vehicleType === "lab" || state.vehicleType === "car") {
+          ctx.fillStyle = "rgba(232, 227, 211, 0.88)";
+          const baseDot = Math.floor((sNow - 20) / 2) * 2;
           for (let d = baseDot; d <= baseDot + 60; d += 2) {
-            const dotX = screenCarX + (d - sCurrent) * metrePixelDist;
-            if (dotX >= 0 && dotX <= width) {
-              ctx.fillRect(dotX, trackY + 36, 3, 3);
-            }
+            const dotX = screenX + (d - sNow) * metrePx;
+            if (dotX >= 0 && dotX <= width) ctx.fillRect(dotX, trackY + 36, 3, 3);
           }
         }
       }
 
-      // --- 4. EXHAUST PARTICLES & THRUSTER DYNAMICS ---
-      const screenCarX = width * 0.32;
-      const screenCarY = trackY - spriteH * 0.85;
+      // 4. Partikel
+      if (state.isRunning && state.v > 0 && Math.random() < 0.65) {
+        let color: string = C.paper;
+        let px = screenX;
+        let py = screenY + spriteH * 0.6;
+        let pvx = -(1.5 + Math.random() * 2.5);
+        const pvy = (Math.random() - 0.5) * 1.2;
 
-      if (isRunning && v > 0) {
-        if (Math.random() < 0.65) {
-          let pColor: string = C.paper;
-          let pX = screenCarX;
-          let pY = screenCarY + spriteH * 0.6;
-          let pVx = -(1.5 + Math.random() * 2.5);
-          let pVy = (Math.random() - 0.5) * 1.2;
-
-          if (vehicleType === "probe") {
-            pColor = Math.random() > 0.4 ? C.blue : C.mint;
-            pX = screenCarX - 4;
-            pY = screenCarY + spriteH * 0.5;
-            pVx = -(3 + Math.random() * 3);
-          } else if (vehicleType === "train") {
-            pColor = C.blue;
-            pX = screenCarX + 8;
-            pY = trackY + 5;
-            pVx = -(2 + Math.random() * 2);
-          } else if (vehicleType === "car") {
-            pColor = "rgba(232, 227, 211, 0.8)";
-            pX = screenCarX - 8;
-            pY = screenCarY + spriteH * 0.75;
-          }
-
-          particlesRef.current.push({
-            x: pX,
-            y: pY,
-            size: 2 + Math.random() * 3,
-            opacity: 0.85,
-            vx: pVx,
-            vy: pVy,
-            color: pColor,
-          });
+        if (state.vehicleType === "probe") {
+          color = Math.random() > 0.4 ? C.blue : C.mint;
+          px = screenX - 4;
+          py = screenY + spriteH * 0.5;
+          pvx = -(3 + Math.random() * 3);
+        } else if (state.vehicleType === "train") {
+          color = C.blue;
+          px = screenX + 8;
+          py = trackY + 5;
+          pvx = -(2 + Math.random() * 2);
+        } else if (state.vehicleType === "car") {
+          color = "rgba(232, 227, 211, 0.75)";
+          px = screenX - 8;
+          py = screenY + spriteH * 0.75;
         }
+
+        particlesRef.current.push({
+          x: px,
+          y: py,
+          size: 2 + Math.random() * 3,
+          opacity: 0.85,
+          vx: pvx,
+          vy: pvy,
+          color,
+        });
       }
 
-      // Update and draw particles
-      for (let i = particlesRef.current.length - 1; i >= 0; i--) {
-        const p = particlesRef.current[i];
+      const particles = particlesRef.current;
+      if (particles.length > 220) particles.splice(0, particles.length - 220);
+
+      for (let i = particles.length - 1; i >= 0; i--) {
+        const p = particles[i];
         p.x += p.vx;
         p.y += p.vy;
         p.size += 0.08;
         p.opacity -= 0.035;
 
         if (p.opacity <= 0) {
-          particlesRef.current.splice(i, 1);
-        } else {
-          ctx.fillStyle = p.color;
-          ctx.globalAlpha = p.opacity;
-          ctx.fillRect(Math.floor(p.x), Math.floor(p.y), Math.floor(p.size), Math.floor(p.size));
-          ctx.globalAlpha = 1.0;
+          particles.splice(i, 1);
+          continue;
         }
+        ctx.globalAlpha = p.opacity;
+        ctx.fillStyle = p.color;
+        ctx.fillRect(Math.floor(p.x), Math.floor(p.y), Math.floor(p.size), Math.floor(p.size));
+        ctx.globalAlpha = 1;
       }
 
-      // --- 5. VEHICLE SPRITE RENDERING ---
+      // 5. Sprite
       if (sprImg && sprImg.complete && sprImg.naturalWidth > 0) {
-        ctx.save();
-        ctx.drawImage(sprImg, screenCarX, screenCarY, spriteW, spriteH);
+        ctx.drawImage(sprImg, screenX, screenY, spriteW, spriteH);
 
-        // Headlight Beam / Forward Sensor Ray
-        if (vehicleType === "car" || vehicleType === "train") {
+        if (state.vehicleType === "car" || state.vehicleType === "train") {
           const beamW = 160;
-          const beamGrad = ctx.createLinearGradient(
-            screenCarX + spriteW,
-            screenCarY + spriteH * 0.5,
-            screenCarX + spriteW + beamW,
-            screenCarY + spriteH * 0.5
+          const beam = ctx.createLinearGradient(
+            screenX + spriteW,
+            screenY + spriteH * 0.5,
+            screenX + spriteW + beamW,
+            screenY + spriteH * 0.5
           );
-          beamGrad.addColorStop(0, "rgba(255, 248, 179, 0.45)");
-          beamGrad.addColorStop(1, "rgba(255, 248, 179, 0)");
-
-          ctx.fillStyle = beamGrad;
+          beam.addColorStop(0, "rgba(255, 248, 179, 0.42)");
+          beam.addColorStop(1, "rgba(255, 248, 179, 0)");
+          ctx.fillStyle = beam;
           ctx.beginPath();
-          ctx.moveTo(screenCarX + spriteW, screenCarY + spriteH * 0.45);
-          ctx.lineTo(screenCarX + spriteW + beamW, screenCarY - 10);
-          ctx.lineTo(screenCarX + spriteW + beamW, screenCarY + spriteH + 20);
-          ctx.lineTo(screenCarX + spriteW, screenCarY + spriteH * 0.7);
+          ctx.moveTo(screenX + spriteW, screenY + spriteH * 0.45);
+          ctx.lineTo(screenX + spriteW + beamW, screenY - 10);
+          ctx.lineTo(screenX + spriteW + beamW, screenY + spriteH + 20);
+          ctx.lineTo(screenX + spriteW, screenY + spriteH * 0.7);
           ctx.closePath();
           ctx.fill();
         }
-
-        ctx.restore();
       } else {
-        // Fallback procedural retro car
         ctx.fillStyle = C.amber;
-        ctx.fillRect(screenCarX, screenCarY, spriteW, spriteH);
+        ctx.fillRect(screenX, screenY, spriteW, spriteH);
       }
 
-      // --- 6. VELOCITY VECTOR ARROW (v) ---
-      drawVelocityArrow(ctx, screenCarX + spriteW * 0.5, screenCarY - 18, v);
+      // 6. Vektor kecepatan
+      drawVelocityArrow(ctx, screenX + spriteW * 0.5, screenY - 20, state.v);
 
-      // --- 7. TELEMETRY BADGE OVERLAY ON CANVAS ---
-      drawCanvasTelemetry(ctx, width, height, v, sCurrent, timeCurrent, vehicleType);
-
-      animationId = requestAnimationFrame(render);
+      frame = requestAnimationFrame(render);
     };
 
-    render();
+    frame = requestAnimationFrame(render);
 
-    return () => {
-      cancelAnimationFrame(animationId);
-    };
-  }, [v, s0, timeCurrent, timeTarget, isRunning, isNightMode, vehicleType, sCurrent, sTarget, assetsLoaded]);
+    return () => cancelAnimationFrame(frame);
+  }, []);
 
   return (
-    <div className="canvas-stage-wrapper" ref={containerRef}>
-      <canvas ref={canvasRef} width={960} height={420} />
+    <section className="stage" aria-label="Lintasan simulasi">
+      <div className="stage-viewport">
+        <canvas
+          ref={canvasRef}
+          width={960}
+          height={420}
+          role="img"
+          aria-label="Animasi kendaraan bergerak lurus dengan kecepatan konstan"
+        />
 
-      {/* Vehicle / Environment Quick Switcher Bar */}
-      <div className="canvas-vehicle-bar">
-        <span className="vehicle-bar-label">WAHANA & LINTASAN:</span>
-        <button
-          onClick={() => {
-            sound.playClick();
-            onSelectVehicle("car");
-          }}
-          className={`vehicle-btn ${vehicleType === "car" ? "vehicle-btn-active" : ""}`}
-        >
-          🚗 Mobil GLB (Highway)
-        </button>
-        <button
-          onClick={() => {
-            sound.playClick();
-            onSelectVehicle("train");
-          }}
-          className={`vehicle-btn ${vehicleType === "train" ? "vehicle-btn-active" : ""}`}
-        >
-          🚄 Maglev Train (Metropolis)
-        </button>
-        <button
-          onClick={() => {
-            sound.playClick();
-            onSelectVehicle("probe");
-          }}
-          className={`vehicle-btn ${vehicleType === "probe" ? "vehicle-btn-active" : ""}`}
-        >
-          🛰️ Voyager Probe (Deep Space)
-        </button>
-        <button
-          onClick={() => {
-            sound.playClick();
-            onSelectVehicle("lab");
-          }}
-          className={`vehicle-btn ${vehicleType === "lab" ? "vehicle-btn-active" : ""}`}
-        >
-          🤖 Trolley Lab (Praktikum)
-        </button>
+        <div className="stage-sweep" ref={sweepRef} aria-hidden="true" />
+
+        <div className="stage-hud" aria-hidden="true">
+          <span className="stage-tag">
+            <span className={`led ${isRunning ? "is-live" : ""}`} />
+            {VEHICLES.find((item) => item.key === vehicleType)?.label ?? "Mobil"}
+          </span>
+          <span className="stage-live">
+            s {num(sCurrent, 1)} / {num(sTarget, 1)} m
+          </span>
+        </div>
       </div>
-    </div>
+
+      <div className="stage-foot">
+        <div className="seg" role="group" aria-label="Pilih wahana">
+          {VEHICLES.map((item) => (
+            <button
+              key={item.key}
+              type="button"
+              className="seg-btn"
+              aria-pressed={vehicleType === item.key}
+              onClick={() => {
+                sound.playClick();
+                onSelectVehicle(item.key);
+              }}
+            >
+              {item.short}
+            </button>
+          ))}
+        </div>
+
+        <div className="stage-meter" aria-hidden="true">
+          <span style={{ width: `${progress}%` }} />
+        </div>
+        <span className="stage-pct">{Math.round(progress)}%</span>
+      </div>
+    </section>
   );
 };
 
-// Helper: Velocity vector arrow showing direction and magnitude
 function drawVelocityArrow(
   ctx: CanvasRenderingContext2D,
   x: number,
   y: number,
   velocity: number
 ) {
-  const arrowLen = Math.min(100, Math.max(30, velocity * 2.2));
+  const len = Math.min(100, Math.max(30, velocity * 2.2));
 
   ctx.save();
   ctx.strokeStyle = C.mint;
   ctx.lineWidth = 3;
   ctx.beginPath();
   ctx.moveTo(x, y);
-  ctx.lineTo(x + arrowLen, y);
+  ctx.lineTo(x + len, y);
   ctx.stroke();
 
-  // Arrowhead
   ctx.fillStyle = C.mint;
   ctx.beginPath();
-  ctx.moveTo(x + arrowLen + 6, y);
-  ctx.lineTo(x + arrowLen - 4, y - 5);
-  ctx.lineTo(x + arrowLen - 4, y + 5);
+  ctx.moveTo(x + len + 6, y);
+  ctx.lineTo(x + len - 4, y - 5);
+  ctx.lineTo(x + len - 4, y + 5);
   ctx.closePath();
   ctx.fill();
 
-  // Label: v = konstan
   ctx.font = `bold 10px ${F.ui}`;
   ctx.fillStyle = C.paper;
-  ctx.fillText(`v = ${velocity} m/s [a = 0]`, x + 4, y - 6);
+  ctx.fillText(`v = ${num(velocity, 1)} m/s · a = 0`, x + 4, y - 7);
   ctx.restore();
 }
 
-// Helper: Finish gate banner at target distance
 function drawFinishGate(
   ctx: CanvasRenderingContext2D,
   x: number,
@@ -421,11 +430,9 @@ function drawFinishGate(
   targetM: number
 ) {
   ctx.save();
-  // Vertical Gate Post
   ctx.fillStyle = C.amber;
   ctx.fillRect(x - 2, trackY - 90, 4, 98);
 
-  // Checkered Finish Flag
   const flagW = 28;
   const flagH = 18;
   ctx.fillStyle = "#ffffff";
@@ -441,51 +448,10 @@ function drawFinishGate(
     }
   }
 
-  // Label
   ctx.font = `9px ${F.ui}`;
   ctx.fillStyle = C.amber;
-  ctx.fillText(`FINISH: ${targetM}m`, x - 18, trackY - 96);
+  ctx.fillText(`FINISH ${num(targetM, 0)}m`, x - 18, trackY - 96);
   ctx.restore();
 }
 
-// Helper: Overlay Telemetry on Canvas
-function drawCanvasTelemetry(
-  ctx: CanvasRenderingContext2D,
-  _width: number,
-  _height: number,
-  v: number,
-  s: number,
-  t: number,
-  _mode: VehicleType
-) {
-  ctx.save();
-  const boxW = 240;
-  const boxH = 58;
-  const boxX = 14;
-  const boxY = 14;
-
-  ctx.fillStyle = "rgba(11, 13, 23, 0.88)";
-  ctx.strokeStyle = C.slate;
-  ctx.lineWidth = 1;
-  ctx.fillRect(boxX, boxY, boxW, boxH);
-  ctx.strokeRect(boxX, boxY, boxW, boxH);
-
-  // Accent line
-  ctx.fillStyle = C.amber;
-  ctx.fillRect(boxX, boxY, boxW, 2);
-
-  ctx.font = `bold 9px ${F.ui}`;
-  ctx.fillStyle = C.mint;
-  ctx.fillText("■ TELEMETRI KINEMATIKA GLB", boxX + 8, boxY + 16);
-
-  ctx.font = `14px ${F.mono}`;
-  ctx.fillStyle = C.paper;
-  ctx.fillText(`s = ${s.toFixed(2)} m`, boxX + 8, boxY + 34);
-  ctx.fillText(`t = ${t.toFixed(2)} s`, boxX + 130, boxY + 34);
-
-  ctx.font = `11px ${F.mono}`;
-  ctx.fillStyle = C.mist;
-  ctx.fillText(`v = ${v.toFixed(1)} m/s (konstan) | a = 0`, boxX + 8, boxY + 50);
-
-  ctx.restore();
-}
+export default CanvasStage;

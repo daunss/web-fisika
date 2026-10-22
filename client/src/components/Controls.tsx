@@ -1,8 +1,28 @@
 import React from "react";
-import { Play, Pause, RotateCcw, FastForward, Save, Gauge, Navigation } from "lucide-react";
+import { FastForward, Gauge, Pause, Play, RotateCcw, Save } from "lucide-react";
 import { sound } from "../utils/audio";
+import { num } from "../utils/format";
+import { Card, CardHead } from "./ui";
 import { RetroGauge } from "./RetroGauge";
 import type { VehicleType } from "./CanvasStage";
+
+interface Preset {
+  key: string;
+  name: string;
+  detail: string;
+  v: number;
+  s0: number;
+  t: number;
+  vehicle: VehicleType;
+}
+
+const PRESETS: Preset[] = [
+  { key: "video", name: "Kasus video", detail: "v 20 · t 30 s", v: 20, s0: 0, t: 30, vehicle: "car" },
+  { key: "maglev", name: "Maglev kota", detail: "v 80 · t 15 s", v: 80, s0: 0, t: 15, vehicle: "train" },
+  { key: "probe", name: "Probe angkasa", detail: "v 150 · t 20 s", v: 150, s0: 0, t: 20, vehicle: "probe" },
+  { key: "lab", name: "Troli lab", detail: "v 0,25 · t 4 s", v: 0.25, s0: 0, t: 4, vehicle: "lab" },
+  { key: "offset", name: "Offset awal", detail: "s₀ 50 m", v: 15, s0: 50, t: 20, vehicle: "car" },
+];
 
 interface ControlsProps {
   v: number;
@@ -11,6 +31,8 @@ interface ControlsProps {
   timeCurrent: number;
   isRunning: boolean;
   isSlowMo: boolean;
+  isSaving: boolean;
+  vehicleType: VehicleType;
   onSetV: (v: number) => void;
   onSetS0: (s0: number) => void;
   onSetTimeTarget: (t: number) => void;
@@ -19,8 +41,6 @@ interface ControlsProps {
   onStepForward: () => void;
   onReset: () => void;
   onSaveSimulation: () => void;
-  isSaving: boolean;
-  vehicleType: VehicleType;
   onSelectVehicle: (type: VehicleType) => void;
 }
 
@@ -31,6 +51,8 @@ export const Controls: React.FC<ControlsProps> = ({
   timeCurrent,
   isRunning,
   isSlowMo,
+  isSaving,
+  vehicleType,
   onSetV,
   onSetS0,
   onSetTimeTarget,
@@ -39,279 +61,198 @@ export const Controls: React.FC<ControlsProps> = ({
   onStepForward,
   onReset,
   onSaveSimulation,
-  isSaving,
-  vehicleType,
   onSelectVehicle,
 }) => {
-  const applyPreset = (presetV: number, presetS0: number, presetT: number, vType?: VehicleType) => {
+  const applyPreset = (preset: Preset) => {
     sound.playClick();
     onReset();
-    onSetV(presetV);
-    onSetS0(presetS0);
-    onSetTimeTarget(presetT);
-    if (vType) {
-      onSelectVehicle(vType);
-    }
+    onSetV(preset.v);
+    onSetS0(preset.s0);
+    onSetTimeTarget(preset.t);
+    onSelectVehicle(preset.vehicle);
   };
 
+  const isPresetActive = (preset: Preset) =>
+    preset.v === v && preset.s0 === s0 && preset.t === timeTarget && preset.vehicle === vehicleType;
+
+  const deltaS = v * timeTarget;
+
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
-      {/* 1. MAIN CONTROL CARD */}
-      <div className="pixel-card pixel-card-accent-amber" style={{ padding: "16px" }}>
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            flexWrap: "wrap",
-            gap: "8px",
-            marginBottom: "12px",
-            borderBottom: "1px solid #2b3350",
-            paddingBottom: "8px",
-          }}
-        >
-          <span
-            style={{
-              fontFamily: "var(--font-ui)",
-              fontSize: "0.7rem",
-              color: "#f6c453",
-              fontWeight: "bold",
-              display: "flex",
-              alignItems: "center",
-              gap: "8px",
-            }}
-          >
-            <Gauge size={14} /> PANEL KONTROL & TACHOMETER GLB
-          </span>
-          <span style={{ fontSize: "0.6rem", color: "#8ea3c9", fontFamily: "var(--font-ui)" }}>
-            SPEED MODIFIER: {isSlowMo ? "0.5x (SLOW MOTION)" : "1.0x (REALTIME)"}
-          </span>
-        </div>
+    <Card accent="amber" className="console">
+      <CardHead
+        index="02"
+        title="Panel kontrol"
+        icon={<Gauge size={15} />}
+        meta={<span>{isSlowMo ? "0,5× lambat" : "1,0× waktu nyata"}</span>}
+      />
 
-        {/* Buttons Grid with Snappy Micro-interactions */}
-        <div className="grid-controls-row" style={{ marginBottom: "16px" }}>
+      <div className="card-body">
+        <div className="console-actions">
           <button
+            type="button"
+            className={`btn btn-primary btn-block ${isRunning ? "is-running" : ""}`}
             onClick={onTogglePlay}
-            className={`pixel-btn ${isRunning ? "pixel-btn-coral" : "pixel-btn-mint"} btn-span-all`}
           >
-            {isRunning ? (
-              <>
-                <Pause size={14} /> PAUSE SIMULASI
-              </>
-            ) : (
-              <>
-                <Play size={14} /> {timeCurrent > 0 ? "LANJUTKAN" : "MULAI SIMULASI"}
-              </>
-            )}
+            {isRunning ? <Pause size={15} /> : <Play size={15} />}
+            {isRunning ? "Jeda simulasi" : timeCurrent > 0 ? "Lanjutkan" : "Mulai simulasi"}
           </button>
 
           <button
+            type="button"
+            className={`btn btn-sm ${isSlowMo ? "btn-active" : ""}`}
+            aria-pressed={isSlowMo}
             onClick={onToggleSlowMo}
-            className={`pixel-btn ${isSlowMo ? "pixel-btn-amber" : ""}`}
-            title="Ubah kecepatan jalannya waktu simulasi (0.5x)"
+            title="Jalankan waktu simulasi setengah kecepatan"
           >
-            <FastForward size={14} /> {isSlowMo ? "SLOW-MO: ON" : "SLOW-MO: 0.5x"}
+            <FastForward size={13} /> Lambat
           </button>
 
           <button
+            type="button"
+            className="btn btn-sm"
+            disabled={isRunning || timeCurrent >= timeTarget}
             onClick={onStepForward}
-            className="pixel-btn"
-            disabled={isRunning}
-            title="Lompat maju 0.5 sekon (hanya saat pause)"
+            title="Maju 0,5 sekon saat simulasi berhenti"
           >
-            STEP +0.5s
-          </button>
-
-          <button onClick={onReset} className="pixel-btn pixel-btn-coral">
-            <RotateCcw size={14} /> RESET
+            +0,5 s
           </button>
 
           <button
-            onClick={onSaveSimulation}
+            type="button"
+            className="btn btn-sm btn-support"
             disabled={isSaving}
-            className="pixel-btn pixel-btn-mint"
-            title="Simpan data running simulasi ini ke database SQLite"
+            onClick={onSaveSimulation}
+            title="Simpan running ini ke riwayat"
           >
-            <Save size={14} /> {isSaving ? "MENYIMPAN..." : "SIMPAN RUN"}
+            <Save size={13} /> {isSaving ? "Menyimpan" : "Simpan"}
+          </button>
+
+          <button type="button" className="btn btn-sm btn-danger" onClick={onReset}>
+            <RotateCcw size={13} /> Reset
           </button>
         </div>
 
-        {/* 2. PARAMETERS WITH INTEGRATED ANALOG GAUGE */}
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
-            gap: "12px",
-            alignItems: "center",
-          }}
-        >
-          {/* Velocity Control Card with Embedded SVG Gauge */}
-          <div
-            style={{
-              padding: "12px",
-              backgroundColor: "rgba(11, 13, 23, 0.75)",
-              border: "1px solid #2b3350",
-              display: "flex",
-              alignItems: "center",
-              gap: "14px",
-            }}
-          >
-            <RetroGauge value={v} max={160} size={94} label="LAJU v" unit="m/s" color="#f6c453" />
-
-            <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "6px" }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                <label style={{ fontSize: "0.65rem", color: "#f6c453", fontFamily: "var(--font-ui)", fontWeight: "bold" }}>
-                  KECEPATAN KONSTAN (v)
-                </label>
-                <div style={{ fontFamily: "var(--font-mono)", fontSize: "1.2rem", color: "#f6c453" }}>
-                  {v} <span style={{ fontSize: "0.75rem", color: "#8ea3c9" }}>m/s</span>
-                </div>
-              </div>
-
-              <input
-                type="range"
-                min="0.2"
-                max="150"
-                step="0.1"
-                value={v}
-                onChange={(e) => onSetV(parseFloat(e.target.value) || 1)}
-                className="pixel-range"
-              />
-
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.8rem", color: "#8ea3c9", fontFamily: "var(--font-mono)" }}>
-                <span>0.2 m/s (Lab)</span>
-                <span>150 m/s (Space)</span>
-              </div>
+        <div className="gauge-row">
+          <RetroGauge value={v} max={160} size={92} label="Laju v" unit="m/s" />
+          <div className="gauge-facts">
+            <div className="fact">
+              <span className="fact-label">Kecepatan</span>
+              <span className="fact-value">
+                {num(v, 1)} <span>m/s</span>
+              </span>
             </div>
-          </div>
-
-          {/* Time & Initial Position Controls */}
-          <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-            {/* Initial Position (s0) */}
-            <div
-              style={{
-                padding: "10px 12px",
-                backgroundColor: "rgba(11, 13, 23, 0.75)",
-                border: "1px solid #2b3350",
-                display: "flex",
-                flexDirection: "column",
-                gap: "6px",
-              }}
-            >
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                <label style={{ fontSize: "0.65rem", color: "#4fc4a8", fontFamily: "var(--font-ui)", fontWeight: "bold" }}>
-                  POSISI AWAL (s₀)
-                </label>
-                <div style={{ fontFamily: "var(--font-mono)", fontSize: "1.15rem", color: "#4fc4a8" }}>
-                  {s0} <span style={{ fontSize: "0.75rem", color: "#8ea3c9" }}>meter</span>
-                </div>
-              </div>
-              <input
-                type="range"
-                min="0"
-                max="100"
-                step="5"
-                value={s0}
-                onChange={(e) => onSetS0(parseFloat(e.target.value) || 0)}
-                className="pixel-range"
-              />
+            <div className="fact">
+              <span className="fact-label">Percepatan</span>
+              <span className="fact-value">
+                0,00 <span>m/s²</span>
+              </span>
             </div>
-
-            {/* Target Duration (t) */}
-            <div
-              style={{
-                padding: "10px 12px",
-                backgroundColor: "rgba(11, 13, 23, 0.75)",
-                border: "1px solid #2b3350",
-                display: "flex",
-                flexDirection: "column",
-                gap: "6px",
-              }}
-            >
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                <label style={{ fontSize: "0.65rem", color: "#5b8dd9", fontFamily: "var(--font-ui)", fontWeight: "bold" }}>
-                  TARGET WAKTU (t)
-                </label>
-                <div style={{ fontFamily: "var(--font-mono)", fontSize: "1.15rem", color: "#5b8dd9" }}>
-                  {timeTarget} <span style={{ fontSize: "0.75rem", color: "#8ea3c9" }}>sekon</span>
-                </div>
-              </div>
-              <input
-                type="range"
-                min="2"
-                max="60"
-                step="1"
-                value={timeTarget}
-                onChange={(e) => onSetTimeTarget(parseFloat(e.target.value) || 2)}
-                className="pixel-range"
-              />
+            <div className="fact">
+              <span className="fact-label">Perpindahan target</span>
+              <span className="fact-value">
+                {num(deltaS, 1)} <span>m</span>
+              </span>
             </div>
           </div>
         </div>
 
-        {/* 3. PRESETS KASUS FISIKA & WAHANA */}
-        <div
-          style={{
-            marginTop: "14px",
-            paddingTop: "12px",
-            borderTop: "1px solid rgba(43, 51, 80, 0.6)",
-            display: "flex",
-            flexWrap: "wrap",
-            alignItems: "center",
-            gap: "8px",
-          }}
-        >
-          <span
-            style={{
-              fontSize: "0.6rem",
-              color: "#8ea3c9",
-              fontFamily: "var(--font-ui)",
-              textTransform: "uppercase",
-              display: "flex",
-              alignItems: "center",
-              gap: "4px",
-              marginRight: "4px",
-            }}
-          >
-            <Navigation size={12} /> PRESET KASUS:
-          </span>
-          <button
-            onClick={() => applyPreset(20, 0, 30, "car")}
-            className={`pixel-btn ${vehicleType === "car" ? "pixel-btn-amber" : ""}`}
-            style={{ padding: "4px 8px", fontSize: "0.6rem", minHeight: "28px" }}
-          >
-            ★ Kasus Video (v=20 m/s, t=30s)
-          </button>
-          <button
-            onClick={() => applyPreset(80, 0, 15, "train")}
-            className={`pixel-btn ${vehicleType === "train" ? "pixel-btn-amber" : ""}`}
-            style={{ padding: "4px 8px", fontSize: "0.6rem", minHeight: "28px" }}
-          >
-            🚄 Maglev Metropolis (v=80 m/s)
-          </button>
-          <button
-            onClick={() => applyPreset(150, 0, 20, "probe")}
-            className={`pixel-btn ${vehicleType === "probe" ? "pixel-btn-amber" : ""}`}
-            style={{ padding: "4px 8px", fontSize: "0.6rem", minHeight: "28px" }}
-          >
-            🛰️ Voyager Probe (v=150 m/s)
-          </button>
-          <button
-            onClick={() => applyPreset(0.25, 0, 4, "lab")}
-            className={`pixel-btn ${vehicleType === "lab" ? "pixel-btn-amber" : ""}`}
-            style={{ padding: "4px 8px", fontSize: "0.6rem", minHeight: "28px" }}
-          >
-            🤖 Praktikum Lab (v=0.25 m/s)
-          </button>
-          <button
-            onClick={() => applyPreset(15, 50, 20, "car")}
-            className="pixel-btn"
-            style={{ padding: "4px 8px", fontSize: "0.6rem", minHeight: "28px" }}
-          >
-            Offset Posisi Awal (s₀=50m)
-          </button>
+        <div className="fields">
+          <div className="field">
+            <div className="field-head">
+              <label className="field-label" htmlFor="ctrl-v">
+                Kecepatan konstan (v)
+              </label>
+              <span className="field-value">
+                {num(v, 1)} <span>m/s</span>
+              </span>
+            </div>
+            <input
+              id="ctrl-v"
+              type="range"
+              className="range"
+              min="0.2"
+              max="150"
+              step="0.1"
+              value={v}
+              onChange={(event) => onSetV(parseFloat(event.target.value) || 0.2)}
+            />
+            <div className="field-scale">
+              <span>0,2</span>
+              <span>150</span>
+            </div>
+          </div>
+
+          <div className="field">
+            <div className="field-head">
+              <label className="field-label" htmlFor="ctrl-s0">
+                Posisi awal (s₀)
+              </label>
+              <span className="field-value">
+                {num(s0, 0)} <span>m</span>
+              </span>
+            </div>
+            <input
+              id="ctrl-s0"
+              type="range"
+              className="range"
+              min="0"
+              max="100"
+              step="5"
+              value={s0}
+              onChange={(event) => onSetS0(parseFloat(event.target.value) || 0)}
+            />
+            <div className="field-scale">
+              <span>0</span>
+              <span>100</span>
+            </div>
+          </div>
+
+          <div className="field">
+            <div className="field-head">
+              <label className="field-label" htmlFor="ctrl-t">
+                Durasi target (t)
+              </label>
+              <span className="field-value">
+                {num(timeTarget, 0)} <span>s</span>
+              </span>
+            </div>
+            <input
+              id="ctrl-t"
+              type="range"
+              className="range"
+              min="2"
+              max="60"
+              step="1"
+              value={timeTarget}
+              onChange={(event) => onSetTimeTarget(parseFloat(event.target.value) || 2)}
+            />
+            <div className="field-scale">
+              <span>2</span>
+              <span>60</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="presets">
+          <span className="field-label">Preset kasus</span>
+          <div className="chips">
+            {PRESETS.map((preset) => (
+              <button
+                key={preset.key}
+                type="button"
+                className="chip"
+                aria-pressed={isPresetActive(preset)}
+                onClick={() => applyPreset(preset)}
+              >
+                <span className="chip-name">{preset.name}</span>
+                <span className="chip-detail">{preset.detail}</span>
+              </button>
+            ))}
+          </div>
         </div>
       </div>
-    </div>
+    </Card>
   );
 };
+
+export default Controls;

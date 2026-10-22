@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import confetti from "canvas-confetti";
 import { HudTop } from "./components/HudTop";
 import { CanvasStage, type VehicleType } from "./components/CanvasStage";
@@ -9,15 +9,39 @@ import { PraktikumPanel, type ExperimentItem } from "./components/PraktikumPanel
 import { ComparisonPanel } from "./components/ComparisonPanel";
 import { QuizPanel } from "./components/QuizPanel";
 import { HistoryPanel } from "./components/HistoryPanel";
-import { MobileFloatingDock, type TabKey } from "./components/MobileFloatingDock";
+import { TabNav } from "./components/TabNav";
+import { MobileDock } from "./components/MobileDock";
+import { ToastHost, toast } from "./components/Toast";
+import type { TabKey } from "./tabs";
 import { sound } from "./utils/audio";
-import { API_BASE } from "./utils/config";
+import { apiGet, apiSend } from "./utils/api";
+import { num } from "./utils/format";
+import { useSceneReveal } from "./utils/motion";
+
+interface SimulationRecord {
+  success: boolean;
+  id: number;
+}
+
+interface ExperimentInput {
+  test_no: number;
+  distance_s: number;
+  time_t1: number;
+  time_t2: number;
+  time_t3: number;
+  v_theory?: number;
+  notes?: string;
+}
+
+function describe(error: unknown): string {
+  return error instanceof Error ? error.message : "Terjadi kesalahan tak terduga.";
+}
 
 export const App: React.FC = () => {
-  // --- Simulation State ---
-  const [v, setV] = useState<number>(20); // Kecepatan konstan m/s
-  const [s0, setS0] = useState<number>(0); // Posisi awal meter
-  const [timeTarget, setTimeTarget] = useState<number>(30); // Durasi sekon
+  // --- state simulasi ---
+  const [v, setV] = useState<number>(20);
+  const [s0, setS0] = useState<number>(0);
+  const [timeTarget, setTimeTarget] = useState<number>(30);
   const [timeCurrent, setTimeCurrent] = useState<number>(0);
   const [isRunning, setIsRunning] = useState<boolean>(false);
   const [isSlowMo, setIsSlowMo] = useState<boolean>(false);
@@ -25,7 +49,7 @@ export const App: React.FC = () => {
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [vehicleType, setVehicleType] = useState<VehicleType>("car");
 
-  // --- UI & Environment State ---
+  // --- state antarmuka ---
   const [activeTab, setActiveTab] = useState<TabKey>("simulator");
   const [scanlinesEnabled, setScanlinesEnabled] = useState<boolean>(true);
   const [isNightMode, setIsNightMode] = useState<boolean>(false);
@@ -34,51 +58,42 @@ export const App: React.FC = () => {
   const [isLoadingExp, setIsLoadingExp] = useState<boolean>(false);
 
   const lastTimeRef = useRef<number>(performance.now());
+  const sceneRef = useSceneReveal(activeTab);
 
-  // Load Initial Practical Data
+  const currentDistance = s0 + v * timeCurrent;
+  const targetDistance = s0 + v * timeTarget;
+
+  // --- data praktikum ---
   useEffect(() => {
-    fetchExperiments();
+    void fetchExperiments();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const fetchExperiments = async () => {
+  async function fetchExperiments() {
     setIsLoadingExp(true);
     try {
-      const res = await fetch(`${API_BASE}/api/experiments`);
-      const json = await res.json();
-      if (json.data) setExperiments(json.data);
-    } catch (e) {
-      console.error("Gagal load experiments:", e);
+      const json = await apiGet<{ success: boolean; count: number; data: ExperimentItem[] }>(
+        "/api/experiments"
+      );
+      setExperiments(Array.isArray(json.data) ? json.data : []);
+    } catch (error) {
+      toast(describe(error), "error");
     } finally {
       setIsLoadingExp(false);
     }
-  };
+  }
 
-  // Main Simulation Loop
+  // --- loop waktu ---
   useEffect(() => {
-    let animId: number;
+    let animId = 0;
 
     const tick = (now: number) => {
-      const dt = (now - lastTimeRef.current) / 1000;
+      const dt = Math.min(0.1, Math.max(0, (now - lastTimeRef.current) / 1000));
       lastTimeRef.current = now;
 
       if (isRunning) {
-        const speedMultiplier = isSlowMo ? 0.5 : 1.0;
-        setTimeCurrent((prev) => {
-          const next = prev + dt * speedMultiplier;
-          if (next >= timeTarget) {
-            setIsRunning(false);
-            setIsFinished(true);
-            sound.playSuccess();
-            confetti({
-              particleCount: 60,
-              spread: 60,
-              origin: { y: 0.6 },
-              colors: ["#f6c453", "#4fc4a8", "#ef6f5e", "#5b8dd9"],
-            });
-            return timeTarget;
-          }
-          return next;
-        });
+        const speedMultiplier = isSlowMo ? 0.5 : 1;
+        setTimeCurrent((prev) => Math.min(timeTarget, prev + dt * speedMultiplier));
       }
 
       animId = requestAnimationFrame(tick);
@@ -90,18 +105,30 @@ export const App: React.FC = () => {
     return () => cancelAnimationFrame(animId);
   }, [isRunning, isSlowMo, timeTarget]);
 
-  // Controls Handlers
+  // Selesai tepat satu kali saat waktu menyentuh target.
+  useEffect(() => {
+    if (!isRunning || timeCurrent < timeTarget) return;
+    setIsRunning(false);
+    setIsFinished(true);
+    sound.playSuccess();
+    confetti({
+      particleCount: 60,
+      spread: 60,
+      origin: { y: 0.6 },
+      colors: ["#f6c453", "#4fc4a8", "#ef6f5e"],
+    });
+  }, [isRunning, timeCurrent, timeTarget]);
+
+  // --- kendali simulasi ---
   const handleTogglePlay = () => {
     sound.playClick();
-    if (!isRunning) {
-      sound.playStart();
-    }
-    if (isFinished) {
+    if (!isRunning) sound.playStart();
+    if (isFinished || timeCurrent >= timeTarget) {
       setTimeCurrent(0);
       setIsFinished(false);
     }
     lastTimeRef.current = performance.now();
-    setIsRunning(!isRunning);
+    setIsRunning((prev) => !prev);
   };
 
   const handleStepForward = () => {
@@ -128,59 +155,67 @@ export const App: React.FC = () => {
     setIsSaving(true);
     sound.playClick();
     try {
-      const res = await fetch(`${API_BASE}/api/simulations`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: `GLB [${vehicleType.toUpperCase()}] v=${v}m/s, t=${timeTarget}s`,
-          v,
-          s0,
-          t: timeTarget,
-          notes: `Wahana ${vehicleType.toUpperCase()} melaju dari s₀=${s0}m sejauh ${(v * timeTarget).toFixed(1)}m`,
-        }),
+      const result = await apiSend<SimulationRecord>("/api/simulations", "POST", {
+        name: `GLB ${vehicleType} v=${v} m/s t=${timeTarget} s`,
+        v,
+        s0,
+        t: timeTarget,
+        notes: `Wahana ${vehicleType} dari s₀=${s0} m sejauh ${(v * timeTarget).toFixed(1)} m`,
       });
-      const data = await res.json();
-      if (data.success) {
-        sound.playSuccess();
-        alert(`★ Data simulasi #${data.id} berhasil disimpan ke Riwayat!`);
-      }
-    } catch (e) {
-      alert("Gagal menyimpan data simulasi.");
-      console.error(e);
+      sound.playSuccess();
+      toast(`Simulasi #${result.id} tersimpan di Riwayat.`, "ok");
+    } catch (error) {
+      toast(describe(error), "error");
     } finally {
       setIsSaving(false);
     }
   };
 
-  const handleAddExperiment = async (exp: any) => {
-    await fetch(`${API_BASE}/api/experiments`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(exp),
-    });
-    fetchExperiments();
+  const handleAddExperiment = async (exp: ExperimentInput) => {
+    try {
+      await apiSend("/api/experiments", "POST", exp);
+      await fetchExperiments();
+      toast("Hasil pengukuran ditambahkan.", "ok");
+    } catch (error) {
+      toast(describe(error), "error");
+      throw error;
+    }
   };
 
   const handleResetDefaults = async () => {
-    await fetch(`${API_BASE}/api/experiments/reset-defaults`, { method: "POST" });
-    fetchExperiments();
+    try {
+      await apiSend("/api/experiments/reset-defaults", "POST");
+      await fetchExperiments();
+      toast("Data praktikum dikembalikan ke set awal.", "info");
+    } catch (error) {
+      toast(describe(error), "error");
+    }
   };
 
   const handleDeleteExperiment = async (id: number) => {
-    await fetch(`${API_BASE}/api/experiments/${id}`, { method: "DELETE" });
-    fetchExperiments();
+    try {
+      await apiSend(`/api/experiments/${id}`, "DELETE");
+      await fetchExperiments();
+      toast("Baris pengukuran dihapus.", "info");
+    } catch (error) {
+      toast(describe(error), "error");
+    }
   };
 
-  // Calculations
-  const currentDistance = s0 + v * timeCurrent;
-  const targetDistance = s0 + v * timeTarget;
+  const handleSelectTab = (tab: TabKey) => {
+    if (tab === activeTab) return;
+    sound.playClick();
+    setActiveTab(tab);
+  };
 
   return (
-    <div className="grid-paper-bg" style={{ minHeight: "100vh", position: "relative" }}>
-      {/* Optional CRT Scanlines */}
-      {scanlinesEnabled && <div className="scanlines-overlay" />}
+    <div className="app-shell">
+      <a className="skip-link" href="#main">
+        Lewati ke konten
+      </a>
 
-      {/* Top Telemetry & Controls HUD */}
+      {scanlinesEnabled && <div className="scanlines" aria-hidden="true" />}
+
       <HudTop
         isRunning={isRunning}
         isFinished={isFinished}
@@ -189,226 +224,134 @@ export const App: React.FC = () => {
         scanlinesEnabled={scanlinesEnabled}
         onToggleScanlines={() => {
           sound.playClick();
-          setScanlinesEnabled(!scanlinesEnabled);
+          setScanlinesEnabled((prev) => !prev);
         }}
         isNightMode={isNightMode}
         onToggleNightMode={() => {
           sound.playClick();
-          setIsNightMode(!isNightMode);
+          setIsNightMode((prev) => !prev);
         }}
         sfxEnabled={sfxEnabled}
-        onToggleSfx={() => setSfxEnabled(!sfxEnabled)}
+        onToggleSfx={() => setSfxEnabled((prev) => !prev)}
       />
 
-      <div className="app-container">
-        {/* Navigation Tabs (Desktop view, hidden on mobile in favor of floating dock) */}
-        <div className="pixel-tabs-wrapper desktop-tabs-nav">
-          <button
-            onClick={() => {
-              sound.playClick();
-              setActiveTab("simulator");
-            }}
-            className={`pixel-tab-item ${activeTab === "simulator" ? "active" : ""}`}
-            title="Tab 1: Simulator Visual & Grafik Realtime"
-          >
-            <img src="/pixel-icons/speedometer.png" alt="Speedometer" className="pixel-tab-icon" />
-            <span>[ 01 ] SIMULATOR</span>
-          </button>
+      <main className="shell" id="main">
+        <TabNav activeTab={activeTab} onSelect={handleSelectTab} />
 
-          <button
-            onClick={() => {
-              sound.playClick();
-              setActiveTab("validation");
-            }}
-            className={`pixel-tab-item ${activeTab === "validation" ? "active" : ""}`}
-            title="Tab 2: Validasi Rumus GLB Komputasi vs Teori"
-          >
-            <img src="/pixel-icons/formula_book.png" alt="Formula" className="pixel-tab-icon" />
-            <span>[ 02 ] RUMUS GLB</span>
-          </button>
-
-          <button
-            onClick={() => {
-              sound.playClick();
-              setActiveTab("praktikum");
-            }}
-            className={`pixel-tab-item ${activeTab === "praktikum" ? "active" : ""}`}
-            title="Tab 3: Data Praktikum Riil Produk 3 & Regresi Linier"
-          >
-            <img src="/pixel-icons/flask_lab.png" alt="Praktikum" className="pixel-tab-icon" />
-            <span>[ 03 ] PRAKTIKUM</span>
-          </button>
-
-          <button
-            onClick={() => {
-              sound.playClick();
-              setActiveTab("comparison");
-            }}
-            className={`pixel-tab-item ${activeTab === "comparison" ? "active" : ""}`}
-            title="Tab 4: Komparasi 3 Pilar Kinematika"
-          >
-            <img src="/pixel-icons/scales_balance.png" alt="Komparasi" className="pixel-tab-icon" />
-            <span>[ 04 ] 3 PILAR</span>
-          </button>
-
-          <button
-            onClick={() => {
-              sound.playClick();
-              setActiveTab("quiz");
-            }}
-            className={`pixel-tab-item ${activeTab === "quiz" ? "active" : ""}`}
-            title="Tab 5: Kuis Kilat Kinematika GLB"
-          >
-            <img src="/pixel-icons/quiz_box.png" alt="Kuis" className="pixel-tab-icon" />
-            <span>[ 05 ] KUIS KILAT</span>
-          </button>
-
-          <button
-            onClick={() => {
-              sound.playClick();
-              setActiveTab("history");
-            }}
-            className={`pixel-tab-item ${activeTab === "history" ? "active" : ""}`}
-            title="Tab 6: Log Riwayat Simulasi"
-          >
-            <img src="/pixel-icons/floppy_disk.png" alt="Riwayat" className="pixel-tab-icon" />
-            <span>[ 06 ] RIWAYAT</span>
-          </button>
-        </div>
-
-        {/* TAB 1: SIMULATOR & GRAFIK REALTIME */}
-        {activeTab === "simulator" && (
-          <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
-            {/* 1. Main Canvas Stage (Visual 60 FPS Pixel Art Engine) */}
-            <CanvasStage
-              v={v}
-              s0={s0}
-              timeCurrent={timeCurrent}
-              timeTarget={timeTarget}
-              isRunning={isRunning}
-              isNightMode={isNightMode}
-              vehicleType={vehicleType}
-              onSelectVehicle={setVehicleType}
-              onReset={handleReset}
-            />
-
-            {/* 2. Cockpit Gauges Readout Banner with Pixel Art Badges */}
-            <div className="grid-cockpit">
-              {/* Odometer */}
-              <div className="pixel-card pixel-card-accent-amber cockpit-card">
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                  <span style={{ fontSize: "0.6rem", color: "#8ea3c9", fontFamily: "var(--font-ui)", textTransform: "uppercase" }}>ODOMETER REALTIME</span>
-                  <img src="/pixel-icons/speedometer.png" alt="" style={{ width: "20px", height: "20px", objectFit: "contain", imageRendering: "pixelated" }} />
+        <div className="scene" ref={sceneRef}>
+          {activeTab === "simulator" && (
+            <div className="sim-grid">
+              <div className="sim-visual">
+                <div data-reveal>
+                  <CanvasStage
+                    v={v}
+                    s0={s0}
+                    timeCurrent={timeCurrent}
+                    timeTarget={timeTarget}
+                    isRunning={isRunning}
+                    isNightMode={isNightMode}
+                    vehicleType={vehicleType}
+                    onSelectVehicle={setVehicleType}
+                  />
                 </div>
-                <div className="cockpit-val" style={{ color: "#f6c453" }}>
-                  {currentDistance.toFixed(1)} <span style={{ fontSize: "0.95rem", color: "#e8e3d3" }}>METER</span>
+
+                <div className="telemetry" data-reveal>
+                  <div className="tel-cell">
+                    <span className="tel-label">Odometer</span>
+                    <span className="tel-value is-core">
+                      {num(currentDistance, 1)}
+                      <span className="tel-unit">m</span>
+                    </span>
+                    <span className="tel-note">Target {num(targetDistance, 1)} m</span>
+                  </div>
+
+                  <div className="tel-cell">
+                    <span className="tel-label">Kecepatan (v)</span>
+                    <span className="tel-value">
+                      {num(v, 1)}
+                      <span className="tel-unit">m/s</span>
+                    </span>
+                    <span className="tel-note">Konstan sepanjang lintasan</span>
+                  </div>
+
+                  <div className="tel-cell">
+                    <span className="tel-label">Percepatan (a)</span>
+                    <span className="tel-value is-support">
+                      0,00
+                      <span className="tel-unit">m/s²</span>
+                    </span>
+                    <span className="tel-note">Syarat GLB terpenuhi</span>
+                  </div>
+
+                  <div className="tel-cell">
+                    <span className="tel-label">Kronometer (t)</span>
+                    <span className="tel-value">
+                      {num(timeCurrent, 1)}
+                      <span className="tel-unit">/ {num(timeTarget, 0)} s</span>
+                    </span>
+                    <span className="tel-note">
+                      Sisa {num(Math.max(0, timeTarget - timeCurrent), 1)} s
+                    </span>
+                  </div>
                 </div>
-                <span style={{ fontSize: "0.85rem", color: "#8ea3c9", fontFamily: "var(--font-mono)" }}>Target: {targetDistance.toFixed(1)} m</span>
               </div>
 
-              {/* Speedometer */}
-              <div className="pixel-card pixel-card-accent-mint cockpit-card">
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                  <span style={{ fontSize: "0.6rem", color: "#8ea3c9", fontFamily: "var(--font-ui)", textTransform: "uppercase" }}>SPEEDOMETER (v)</span>
-                  <img src="/pixel-icons/logo.png" alt="" style={{ width: "20px", height: "20px", objectFit: "contain", imageRendering: "pixelated" }} />
-                </div>
-                <div className="cockpit-val" style={{ color: "#4fc4a8" }}>
-                  {v.toFixed(1)} <span style={{ fontSize: "0.95rem", color: "#e8e3d3" }}>M/S</span>
-                </div>
-                <span style={{ fontSize: "0.85rem", color: "#4fc4a8", fontFamily: "var(--font-mono)" }}>KONSTAN MUTLAK ★</span>
+              <div className="sim-console" data-reveal>
+                <Controls
+                  v={v}
+                  s0={s0}
+                  timeTarget={timeTarget}
+                  timeCurrent={timeCurrent}
+                  isRunning={isRunning}
+                  isSlowMo={isSlowMo}
+                  isSaving={isSaving}
+                  vehicleType={vehicleType}
+                  onSetV={setV}
+                  onSetS0={setS0}
+                  onSetTimeTarget={setTimeTarget}
+                  onTogglePlay={handleTogglePlay}
+                  onToggleSlowMo={() => {
+                    sound.playClick();
+                    setIsSlowMo((prev) => !prev);
+                  }}
+                  onStepForward={handleStepForward}
+                  onReset={handleReset}
+                  onSaveSimulation={handleSaveSimulation}
+                  onSelectVehicle={setVehicleType}
+                />
               </div>
 
-              {/* Accelerometer */}
-              <div className="pixel-card pixel-card-accent-coral cockpit-card">
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                  <span style={{ fontSize: "0.6rem", color: "#8ea3c9", fontFamily: "var(--font-ui)", textTransform: "uppercase" }}>PERCEPATAN (a)</span>
-                  <img src="/pixel-icons/formula_book.png" alt="" style={{ width: "20px", height: "20px", objectFit: "contain", imageRendering: "pixelated" }} />
-                </div>
-                <div className="cockpit-val" style={{ color: "#ef6f5e" }}>
-                  0.00 <span style={{ fontSize: "0.95rem", color: "#e8e3d3" }}>M/S²</span>
-                </div>
-                <span style={{ fontSize: "0.85rem", color: "#ef6f5e", fontFamily: "var(--font-mono)" }}>a = 0 (SYARAT GLB)</span>
-              </div>
-
-              {/* Stopwatch */}
-              <div className="pixel-card cockpit-card">
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                  <span style={{ fontSize: "0.6rem", color: "#8ea3c9", fontFamily: "var(--font-ui)", textTransform: "uppercase" }}>CHRONOMETER (t)</span>
-                  <img src="/pixel-icons/flask_lab.png" alt="" style={{ width: "20px", height: "20px", objectFit: "contain", imageRendering: "pixelated" }} />
-                </div>
-                <div className="cockpit-val" style={{ color: "#fbf6e9" }}>
-                  {timeCurrent.toFixed(1)} <span style={{ fontSize: "0.95rem", color: "#8ea3c9" }}>/ {timeTarget.toFixed(0)}s</span>
-                </div>
-                <span style={{ fontSize: "0.85rem", color: "#8ea3c9", fontFamily: "var(--font-mono)" }}>
-                  Sisa: {Math.max(0, timeTarget - timeCurrent).toFixed(1)}s
-                </span>
+              <div className="sim-charts" data-reveal>
+                <LiveCharts v={v} s0={s0} timeTarget={timeTarget} timeCurrent={timeCurrent} />
               </div>
             </div>
+          )}
 
-            {/* 3. Controls Panel (Sliders, Buttons, Presets, Tachometer Gauge) */}
-            <Controls
-              v={v}
-              s0={s0}
-              timeTarget={timeTarget}
-              timeCurrent={timeCurrent}
-              isRunning={isRunning}
-              isSlowMo={isSlowMo}
-              onSetV={setV}
-              onSetS0={setS0}
-              onSetTimeTarget={setTimeTarget}
-              onTogglePlay={handleTogglePlay}
-              onToggleSlowMo={() => {
-                sound.playClick();
-                setIsSlowMo(!isSlowMo);
-              }}
-              onStepForward={handleStepForward}
-              onReset={handleReset}
-              onSaveSimulation={handleSaveSimulation}
-              isSaving={isSaving}
-              vehicleType={vehicleType}
-              onSelectVehicle={setVehicleType}
+          {activeTab === "validation" && (
+            <ValidationPanel v={v} s0={s0} timeTarget={timeTarget} />
+          )}
+
+          {activeTab === "praktikum" && (
+            <PraktikumPanel
+              experiments={experiments}
+              onAddExperiment={handleAddExperiment}
+              onResetDefaults={handleResetDefaults}
+              onDeleteExperiment={handleDeleteExperiment}
+              isLoading={isLoadingExp}
             />
+          )}
 
-            {/* 4. Dual Live Realtime Physics Charts */}
-            <LiveCharts
-              v={v}
-              s0={s0}
-              timeTarget={timeTarget}
-              timeCurrent={timeCurrent}
-            />
-          </div>
-        )}
+          {activeTab === "comparison" && <ComparisonPanel />}
 
-        {/* TAB 2: VALIDASI RUMUS MATEMATIS */}
-        {activeTab === "validation" && (
-          <ValidationPanel v={v} s0={s0} timeTarget={timeTarget} />
-        )}
+          {activeTab === "quiz" && <QuizPanel />}
 
-        {/* TAB 3: PENGOLAH DATA PRAKTIKUM MANDIRI */}
-        {activeTab === "praktikum" && (
-          <PraktikumPanel
-            experiments={experiments}
-            onAddExperiment={handleAddExperiment}
-            onResetDefaults={handleResetDefaults}
-            onDeleteExperiment={handleDeleteExperiment}
-            isLoading={isLoadingExp}
-          />
-        )}
+          {activeTab === "history" && <HistoryPanel />}
+        </div>
+      </main>
 
-        {/* TAB 4: MODUL ANALISIS KOMPARASI 3 PILAR */}
-        {activeTab === "comparison" && <ComparisonPanel />}
-
-        {/* TAB 5: KUIS KILAT KINEMATIKA GLB */}
-        {activeTab === "quiz" && <QuizPanel />}
-
-        {/* TAB 6: RIWAYAT SIMULASI SQLITE */}
-        {activeTab === "history" && <HistoryPanel />}
-      </div>
-
-      {/* FLOATING MOBILE NAVIGATION DOCK & TACTILE QUICK ACTION FAB */}
-      <MobileFloatingDock
+      <MobileDock
         activeTab={activeTab}
-        onSelectTab={(tab) => setActiveTab(tab)}
+        onSelectTab={handleSelectTab}
         isRunning={isRunning}
         timeCurrent={timeCurrent}
         timeTarget={timeTarget}
@@ -418,6 +361,8 @@ export const App: React.FC = () => {
         onReset={handleReset}
         currentDistance={currentDistance}
       />
+
+      <ToastHost />
     </div>
   );
 };

@@ -1,5 +1,7 @@
 import React from "react";
-import { TrendingUp, Activity, CheckCircle2 } from "lucide-react";
+import { Activity, TrendingUp } from "lucide-react";
+import { num } from "../utils/format";
+import { Card, CardHead } from "./ui";
 
 interface LiveChartsProps {
   v: number;
@@ -7,6 +9,23 @@ interface LiveChartsProps {
   timeTarget: number;
   timeCurrent: number;
 }
+
+const SVG_W = 400;
+const SVG_H = 180;
+const PAD_L = 46;
+const PAD_B = 32;
+const PAD_T = 20;
+const PAD_R = 26;
+
+const CHART_W = SVG_W - PAD_L - PAD_R;
+const CHART_H = SVG_H - PAD_T - PAD_B;
+
+const AXIS = "#3f4a6b";
+const GRID = "#2b3350";
+const INK_DIM = "#8ea3c9";
+const CORE = "#f6c453";
+const SUPPORT = "#4fc4a8";
+const SUPPORT_DEEP = "#2f8f7a";
 
 export const LiveCharts: React.FC<LiveChartsProps> = ({
   v,
@@ -16,287 +35,235 @@ export const LiveCharts: React.FC<LiveChartsProps> = ({
 }) => {
   const sMax = Math.max(10, s0 + v * timeTarget);
   const sNow = s0 + v * timeCurrent;
-  const progressRatio = Math.min(1, timeCurrent / (timeTarget || 1));
+  const progress = Math.min(1, Math.max(0, timeCurrent / (timeTarget || 1)));
 
-  // Dimensi ViewBox SVG untuk ketajaman pixel
-  const svgW = 400;
-  const svgH = 180;
-  const padL = 45;
-  const padB = 30;
-  const padT = 20;
-  const padR = 25;
+  const pointX = PAD_L + CHART_W * progress;
+  const pointY = SVG_H - PAD_B - (sNow / sMax) * CHART_H;
 
-  const chartW = svgW - padL - padR;
-  const chartH = svgH - padT - padB;
+  const startY = SVG_H - PAD_B - (s0 / sMax) * CHART_H;
+  const endY = SVG_H - PAD_B - ((s0 + v * timeTarget) / sMax) * CHART_H;
 
-  // Koordinat Titik Sekarang pada Grafik s-t
-  const pointX_ST = padL + chartW * progressRatio;
-  const pointY_ST = svgH - padB - (sNow / sMax) * chartH;
-
-  // Koordinat Garis Penuh s-t
-  const startY_ST = svgH - padB - (s0 / sMax) * chartH;
-  const endY_ST = svgH - padB - ((s0 + v * timeTarget) / sMax) * chartH;
-
-  // Koordinat Grafik v-t (Konstan Horizontal)
   const vMax = Math.max(10, v * 1.5);
-  const lineY_VT = svgH - padB - (v / vMax) * chartH;
-  const currentX_VT = padL + chartW * progressRatio;
+  const lineY = SVG_H - PAD_B - (v / vMax) * CHART_H;
+  const areaH = SVG_H - PAD_B - lineY;
 
   return (
-    <div className="grid-charts-row">
-      {/* 1. GRAFIK POSISI TERHADAP WAKTU (s - t) */}
-      <div className="pixel-card pixel-card-accent-mint" style={{ padding: "16px" }}>
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            flexWrap: "wrap",
-            gap: "8px",
-            marginBottom: "10px",
-            paddingBottom: "8px",
-            borderBottom: "1px solid #2b3350",
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            <TrendingUp size={14} color="#4fc4a8" />
-            <span style={{ fontFamily: "var(--font-ui)", fontSize: "0.65rem", color: "#4fc4a8", fontWeight: "bold" }}>
-              GRAFIK 01: POSISI (s) - WAKTU (t)
-            </span>
-          </div>
-          <span style={{ fontSize: "0.6rem", color: "#8ea3c9", fontFamily: "var(--font-ui)" }}>
-            GRADIEN = v ({v} m/s)
-          </span>
-        </div>
+    <div className="charts">
+      <Card accent="mint">
+        <CardHead
+          index="01"
+          title="Posisi terhadap waktu"
+          icon={<TrendingUp size={15} />}
+          meta={<span>gradien = v</span>}
+        />
+        <div className="card-body">
+          <div className="chart-frame">
+            <svg
+              viewBox={`0 0 ${SVG_W} ${SVG_H}`}
+              role="img"
+              aria-label={`Grafik posisi terhadap waktu. Saat t ${num(timeCurrent, 1)} sekon, posisi ${num(sNow, 1)} meter.`}
+            >
+              {[0.25, 0.5, 0.75].map((ratio) => (
+                <line
+                  key={ratio}
+                  x1={PAD_L}
+                  y1={PAD_T + CHART_H * ratio}
+                  x2={SVG_W - PAD_R}
+                  y2={PAD_T + CHART_H * ratio}
+                  stroke={GRID}
+                  strokeDasharray="3 4"
+                />
+              ))}
 
-        {/* SVG Chart s - t */}
-        <div
-          className="grid-paper-bg"
-          style={{
-            position: "relative",
-            backgroundColor: "#0b0d17",
-            border: "1px solid #2b3350",
-            padding: "4px",
-          }}
-        >
-          <svg viewBox={`0 0 ${svgW} ${svgH}`} style={{ width: "100%", height: "auto", display: "block", userSelect: "none" }}>
-            {/* Grid Lines */}
-            <line x1={padL} y1={padT + chartH * 0.25} x2={svgW - padR} y2={padT + chartH * 0.25} stroke="#2b3350" strokeDasharray="3 3" />
-            <line x1={padL} y1={padT + chartH * 0.50} x2={svgW - padR} y2={padT + chartH * 0.50} stroke="#2b3350" strokeDasharray="3 3" />
-            <line x1={padL} y1={padT + chartH * 0.75} x2={svgW - padR} y2={padT + chartH * 0.75} stroke="#2b3350" strokeDasharray="3 3" />
+              <line x1={PAD_L} y1={PAD_T} x2={PAD_L} y2={SVG_H - PAD_B} stroke={AXIS} strokeWidth="2" />
+              <line
+                x1={PAD_L}
+                y1={SVG_H - PAD_B}
+                x2={SVG_W - PAD_R}
+                y2={SVG_H - PAD_B}
+                stroke={AXIS}
+                strokeWidth="2"
+              />
 
-            {/* Sumbu X & Y */}
-            <line x1={padL} y1={padT} x2={padL} y2={svgH - padB} stroke="#5b8dd9" strokeWidth="2" />
-            <line x1={padL} y1={svgH - padB} x2={svgW - padR} y2={svgH - padB} stroke="#5b8dd9" strokeWidth="2" />
-
-            {/* Label Sumbu */}
-            <text x={padL - 10} y={padT + 10} fill="#4fc4a8" fontSize="12" fontFamily="'VT323', monospace" textAnchor="end">
-              s (m)
-            </text>
-            <text x={svgW - padR + 5} y={svgH - padB + 4} fill="#8ea3c9" fontSize="12" fontFamily="'VT323', monospace">
-              t (s)
-            </text>
-
-            <text x={padL - 8} y={padT + 12} fill="#8ea3c9" fontSize="11" fontFamily="'VT323', monospace" textAnchor="end">
-              {sMax.toFixed(0)}
-            </text>
-            <text x={padL - 8} y={svgH - padB + 2} fill="#8ea3c9" fontSize="11" fontFamily="'VT323', monospace" textAnchor="end">
-              {s0}
-            </text>
-            <text x={svgW - padR} y={svgH - padB + 16} fill="#8ea3c9" fontSize="11" fontFamily="'VT323', monospace" textAnchor="middle">
-              {timeTarget.toFixed(0)}
-            </text>
-
-            {/* Garis Lintasan Penuh Teori (Dashed Mint) */}
-            <line
-              x1={padL}
-              y1={startY_ST}
-              x2={padL + chartW}
-              y2={endY_ST}
-              stroke="#2f8f7a"
-              strokeWidth="2"
-              strokeDasharray="4 4"
-            />
-
-            {/* Garis Lintasan Realtime Berjalan (Solid Mint Glow) */}
-            <line
-              x1={padL}
-              y1={startY_ST}
-              x2={pointX_ST}
-              y2={pointY_ST}
-              stroke="#4fc4a8"
-              strokeWidth="3"
-            />
-
-            {/* Titik Koordinat Realtime */}
-            <circle cx={pointX_ST} cy={pointY_ST} r="5" fill="#f6c453" stroke="#0b0d17" strokeWidth="2" />
-          </svg>
-
-          {/* Current Values Ticker */}
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              flexWrap: "wrap",
-              gap: "6px",
-              padding: "6px 10px",
-              backgroundColor: "#141827",
-              borderTop: "1px solid #2b3350",
-              fontFamily: "var(--font-mono)",
-              fontSize: "0.95rem",
-            }}
-          >
-            <span style={{ color: "#8ea3c9" }}>
-              Posisi s(t) = <strong style={{ color: "#4fc4a8", fontSize: "1.2rem" }}>{sNow.toFixed(1)} m</strong>
-            </span>
-            <span style={{ color: "#8ea3c9" }}>
-              Waktu t = <strong style={{ color: "#f6c453", fontSize: "1.2rem" }}>{timeCurrent.toFixed(1)} s</strong>
-            </span>
-          </div>
-        </div>
-
-        <div style={{ marginTop: "10px", fontSize: "0.6rem", color: "#8ea3c9", fontFamily: "var(--font-ui)", display: "flex", alignItems: "center", gap: "6px" }}>
-          <CheckCircle2 size={12} color="#4fc4a8" />
-          <span>Bentuk: Garis lurus linier miring (Kemiringan konstan)</span>
-        </div>
-      </div>
-
-      {/* 2. GRAFIK KECEPATAN TERHADAP WAKTU (v - t) */}
-      <div className="pixel-card pixel-card-accent-amber" style={{ padding: "16px" }}>
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            flexWrap: "wrap",
-            gap: "8px",
-            marginBottom: "10px",
-            paddingBottom: "8px",
-            borderBottom: "1px solid #2b3350",
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            <Activity size={14} color="#f6c453" />
-            <span style={{ fontFamily: "var(--font-ui)", fontSize: "0.65rem", color: "#f6c453", fontWeight: "bold" }}>
-              GRAFIK 02: KECEPATAN (v) - WAKTU (t)
-            </span>
-          </div>
-          <span style={{ fontSize: "0.6rem", color: "#ef6f5e", fontFamily: "var(--font-ui)", fontWeight: "bold" }}>
-            a = 0 (PERCEPATAN NOL)
-          </span>
-        </div>
-
-        {/* SVG Chart v - t */}
-        <div
-          className="grid-paper-bg"
-          style={{
-            position: "relative",
-            backgroundColor: "#0b0d17",
-            border: "1px solid #2b3350",
-            padding: "4px",
-          }}
-        >
-          <svg viewBox={`0 0 ${svgW} ${svgH}`} style={{ width: "100%", height: "auto", display: "block", userSelect: "none" }}>
-            {/* Sumbu X & Y */}
-            <line x1={padL} y1={padT} x2={padL} y2={svgH - padB} stroke="#5b8dd9" strokeWidth="2" />
-            <line x1={padL} y1={svgH - padB} x2={svgW - padR} y2={svgH - padB} stroke="#5b8dd9" strokeWidth="2" />
-
-            {/* Label Sumbu */}
-            <text x={padL - 10} y={padT + 10} fill="#f6c453" fontSize="12" fontFamily="'VT323', monospace" textAnchor="end">
-              v (m/s)
-            </text>
-            <text x={svgW - padR + 5} y={svgH - padB + 4} fill="#8ea3c9" fontSize="12" fontFamily="'VT323', monospace">
-              t (s)
-            </text>
-
-            <text x={padL - 8} y={lineY_VT + 4} fill="#f6c453" fontSize="12" fontFamily="'VT323', monospace" textAnchor="end">
-              {v}
-            </text>
-            <text x={padL - 8} y={svgH - padB + 2} fill="#8ea3c9" fontSize="11" fontFamily="'VT323', monospace" textAnchor="end">
-              0
-            </text>
-
-            {/* Area Di Bawah Kurva (Luas Daerah = Jarak Tempuh Δs) */}
-            <polygon
-              points={`
-                ${padL},${svgH - padB} 
-                ${padL},${lineY_VT} 
-                ${currentX_VT},${lineY_VT} 
-                ${currentX_VT},${svgH - padB}
-              `}
-              fill="rgba(246, 196, 83, 0.22)"
-              stroke="none"
-            />
-
-            {/* Garis Teori Lengkap */}
-            <line
-              x1={padL}
-              y1={lineY_VT}
-              x2={padL + chartW}
-              y2={lineY_VT}
-              stroke="#8b5a3c"
-              strokeWidth="2"
-              strokeDasharray="4 4"
-            />
-
-            {/* Garis Kecepatan Realtime (Solid Amber Horizontal) */}
-            <line
-              x1={padL}
-              y1={lineY_VT}
-              x2={currentX_VT}
-              y2={lineY_VT}
-              stroke="#f6c453"
-              strokeWidth="3"
-            />
-
-            {/* Titik Realtime */}
-            <circle cx={currentX_VT} cy={lineY_VT} r="5" fill="#4fc4a8" stroke="#0b0d17" strokeWidth="2" />
-
-            {/* Label Luas Daerah = s */}
-            {progressRatio > 0.2 && (
+              <text x={PAD_L - 8} y={PAD_T + 9} fill={SUPPORT} fontSize="12" fontFamily="'VT323', monospace" textAnchor="end">
+                s (m)
+              </text>
               <text
-                x={padL + (currentX_VT - padL) * 0.5}
-                y={lineY_VT + (svgH - padB - lineY_VT) * 0.55}
-                fill="#fbf6e9"
+                x={SVG_W - PAD_R + 4}
+                y={SVG_H - PAD_B + 4}
+                fill={INK_DIM}
+                fontSize="12"
+                fontFamily="'VT323', monospace"
+              >
+                t (s)
+              </text>
+
+              <text x={PAD_L - 8} y={PAD_T + 12} fill={INK_DIM} fontSize="11" fontFamily="'VT323', monospace" textAnchor="end">
+                {num(sMax, 0)}
+              </text>
+              <text
+                x={PAD_L - 8}
+                y={SVG_H - PAD_B + 2}
+                fill={INK_DIM}
                 fontSize="11"
-                fontFamily="'Silkscreen', monospace"
+                fontFamily="'VT323', monospace"
+                textAnchor="end"
+              >
+                {num(s0, 0)}
+              </text>
+              <text
+                x={SVG_W - PAD_R}
+                y={SVG_H - PAD_B + 16}
+                fill={INK_DIM}
+                fontSize="11"
+                fontFamily="'VT323', monospace"
                 textAnchor="middle"
               >
-                LUAS = Δs ({((sNow - s0)).toFixed(1)} m)
+                {num(timeTarget, 0)}
               </text>
-            )}
-          </svg>
 
-          {/* Current Values Ticker */}
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              flexWrap: "wrap",
-              gap: "6px",
-              padding: "6px 10px",
-              backgroundColor: "#141827",
-              borderTop: "1px solid #2b3350",
-              fontFamily: "var(--font-mono)",
-              fontSize: "0.95rem",
-            }}
-          >
-            <span style={{ color: "#8ea3c9" }}>
-              Kecepatan v = <strong style={{ color: "#f6c453", fontSize: "1.2rem" }}>{v.toFixed(1)} m/s (Tetap)</strong>
+              <line
+                x1={PAD_L}
+                y1={startY}
+                x2={PAD_L + CHART_W}
+                y2={endY}
+                stroke={SUPPORT_DEEP}
+                strokeWidth="2"
+                strokeDasharray="4 4"
+              />
+              <line x1={PAD_L} y1={startY} x2={pointX} y2={pointY} stroke={SUPPORT} strokeWidth="3" />
+              <circle cx={pointX} cy={pointY} r="5" fill={CORE} stroke="#0b0d17" strokeWidth="2" />
+            </svg>
+          </div>
+
+          <div className="chart-foot">
+            <span>
+              s(t) <strong style={{ color: SUPPORT }}>{num(sNow, 1)} m</strong>
             </span>
-            <span style={{ color: "#8ea3c9" }}>
-              Luas Daerah = <strong style={{ color: "#4fc4a8", fontSize: "1.2rem" }}>{((sNow - s0)).toFixed(1)} m</strong>
+            <span>
+              t <strong style={{ color: CORE }}>{num(timeCurrent, 1)} s</strong>
+            </span>
+          </div>
+
+          <div className="legend">
+            <span className="legend-item">
+              <span className="legend-swatch" />
+              Garis berjalan
+            </span>
+            <span className="legend-item">
+              <span className="legend-swatch is-dashed" />
+              Lintasan teori penuh
             </span>
           </div>
         </div>
+      </Card>
 
-        <div style={{ marginTop: "10px", fontSize: "0.6rem", color: "#8ea3c9", fontFamily: "var(--font-ui)", display: "flex", alignItems: "center", gap: "6px" }}>
-          <CheckCircle2 size={12} color="#f6c453" />
-          <span>Bentuk: Garis horizontal datar (Kecepatan tidak pernah berubah)</span>
+      <Card accent="amber">
+        <CardHead
+          index="02"
+          title="Kecepatan terhadap waktu"
+          icon={<Activity size={15} />}
+          meta={<span>a = 0</span>}
+        />
+        <div className="card-body">
+          <div className="chart-frame">
+            <svg
+              viewBox={`0 0 ${SVG_W} ${SVG_H}`}
+              role="img"
+              aria-label={`Grafik kecepatan terhadap waktu. Kecepatan tetap ${num(v, 1)} meter per sekon.`}
+            >
+              <line x1={PAD_L} y1={PAD_T} x2={PAD_L} y2={SVG_H - PAD_B} stroke={AXIS} strokeWidth="2" />
+              <line
+                x1={PAD_L}
+                y1={SVG_H - PAD_B}
+                x2={SVG_W - PAD_R}
+                y2={SVG_H - PAD_B}
+                stroke={AXIS}
+                strokeWidth="2"
+              />
+
+              <text x={PAD_L - 8} y={PAD_T + 9} fill={CORE} fontSize="12" fontFamily="'VT323', monospace" textAnchor="end">
+                v (m/s)
+              </text>
+              <text
+                x={SVG_W - PAD_R + 4}
+                y={SVG_H - PAD_B + 4}
+                fill={INK_DIM}
+                fontSize="12"
+                fontFamily="'VT323', monospace"
+              >
+                t (s)
+              </text>
+
+              <text x={PAD_L - 8} y={lineY + 4} fill={CORE} fontSize="12" fontFamily="'VT323', monospace" textAnchor="end">
+                {num(v, 0)}
+              </text>
+              <text
+                x={PAD_L - 8}
+                y={SVG_H - PAD_B + 2}
+                fill={INK_DIM}
+                fontSize="11"
+                fontFamily="'VT323', monospace"
+                textAnchor="end"
+              >
+                0
+              </text>
+
+              <polygon
+                points={`${PAD_L},${SVG_H - PAD_B} ${PAD_L},${lineY} ${pointX},${lineY} ${pointX},${SVG_H - PAD_B}`}
+                fill="rgba(246, 196, 83, 0.16)"
+              />
+
+              <line
+                x1={PAD_L}
+                y1={lineY}
+                x2={PAD_L + CHART_W}
+                y2={lineY}
+                stroke={SUPPORT_DEEP}
+                strokeWidth="2"
+                strokeDasharray="4 4"
+              />
+              <line x1={PAD_L} y1={lineY} x2={pointX} y2={lineY} stroke={CORE} strokeWidth="3" />
+              <circle cx={pointX} cy={lineY} r="5" fill={SUPPORT} stroke="#0b0d17" strokeWidth="2" />
+
+              {progress > 0.18 && areaH > 18 ? (
+                <text
+                  x={PAD_L + (pointX - PAD_L) * 0.5}
+                  y={lineY + areaH * 0.55}
+                  fill="#e8e3d3"
+                  fontSize="11"
+                  fontFamily="'Silkscreen', monospace"
+                  textAnchor="middle"
+                >
+                  LUAS = Δs {num(sNow - s0, 1)} m
+                </text>
+              ) : null}
+            </svg>
+          </div>
+
+          <div className="chart-foot">
+            <span>
+              v <strong style={{ color: CORE }}>{num(v, 1)} m/s</strong>
+            </span>
+            <span>
+              Δs <strong style={{ color: SUPPORT }}>{num(sNow - s0, 1)} m</strong>
+            </span>
+          </div>
+
+          <div className="legend">
+            <span className="legend-item">
+              <span className="legend-swatch" style={{ background: CORE }} />
+              Kecepatan tetap
+            </span>
+            <span className="legend-item">
+              <span className="legend-swatch is-dashed" />
+              Tanpa perubahan
+            </span>
+          </div>
         </div>
-      </div>
+      </Card>
     </div>
   );
 };
+
+export default LiveCharts;

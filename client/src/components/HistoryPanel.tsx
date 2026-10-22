@@ -1,7 +1,10 @@
-import React, { useEffect, useState } from "react";
-import { History, Download, Trash2, RefreshCw, FileText } from "lucide-react";
+import React, { useCallback, useEffect, useState } from "react";
+import { Download, FileText, RefreshCw, Sheet, Trash2 } from "lucide-react";
 import { sound } from "../utils/audio";
-import { API_BASE } from "../utils/config";
+import { apiGet, apiSend } from "../utils/api";
+import { num, stamp } from "../utils/format";
+import { toast } from "./Toast";
+import { Card, CardHead, Spinner, StateBlock } from "./ui";
 
 interface SimulationHistoryItem {
   id: number;
@@ -16,191 +19,251 @@ interface SimulationHistoryItem {
   created_at: string;
 }
 
+interface HistoryResponse {
+  success: boolean;
+  count: number;
+  data: SimulationHistoryItem[];
+}
+
+function download(filename: string, content: string, mime: string) {
+  const blob = new Blob([content], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+
+function csvCell(value: string | number): string {
+  const text = String(value ?? "");
+  return `"${text.replace(/"/g, '""')}"`;
+}
+
+function today(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
 export const HistoryPanel: React.FC = () => {
   const [history, setHistory] = useState<SimulationHistoryItem[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string>("");
+  const [confirmId, setConfirmId] = useState<number | null>(null);
+  const [deleting, setDeleting] = useState<number | null>(null);
 
-  const fetchHistory = () => {
+  const fetchHistory = useCallback(async () => {
     setLoading(true);
-    fetch(`${API_BASE}/api/simulations`)
-      .then((res) => res.json())
-      .then((json) => {
-        setHistory(json.data || []);
-        setLoading(false);
-      })
-      .catch((err) => {
-        console.error("Gagal load history:", err);
-        setLoading(false);
-      });
-  };
+    try {
+      const json = await apiGet<HistoryResponse>("/api/simulations");
+      setHistory(Array.isArray(json.data) ? json.data : []);
+      setError("");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Gagal memuat riwayat.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    fetchHistory();
-  }, []);
+    void fetchHistory();
+  }, [fetchHistory]);
 
   const handleDelete = async (id: number) => {
     sound.playClick();
-    if (!confirm(`Hapus data simulasi #${id}?`)) return;
+    setDeleting(id);
     try {
-      await fetch(`${API_BASE}/api/simulations/${id}`, { method: "DELETE" });
-      fetchHistory();
-    } catch (e) {
-      console.error(e);
+      await apiSend(`/api/simulations/${id}`, "DELETE");
+      setConfirmId(null);
+      toast(`Riwayat #${id} dihapus.`, "info");
+      await fetchHistory();
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Gagal menghapus riwayat.", "error");
+    } finally {
+      setDeleting(null);
     }
   };
 
   const handleExportJSON = () => {
     sound.playClick();
-    fetch(`${API_BASE}/api/export`)
-      .then((res) => res.json())
-      .then((data) => {
-        const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = `data-fisika-glb-${new Date().toISOString().slice(0, 10)}.json`;
-        a.click();
-        sound.playSuccess();
-      });
+    if (history.length === 0) {
+      toast("Belum ada riwayat untuk diekspor.", "info");
+      return;
+    }
+    download(`riwayat-glb-${today()}.json`, JSON.stringify(history, null, 2), "application/json");
+    sound.playSuccess();
   };
 
   const handleExportCSV = () => {
     sound.playClick();
     if (history.length === 0) {
-      alert("Belum ada riwayat simulasi untuk diekspor.");
+      toast("Belum ada riwayat untuk diekspor.", "info");
       return;
     }
-    const headers = ["ID", "Nama Run", "Laju v (m/s)", "Posisi Awal s0 (m)", "Durasi t (s)", "Posisi Akhir s (m)", "Percepatan a (m/s²)", "Catatan", "Waktu Simpan"];
+
+    const headers = [
+      "id",
+      "nama",
+      "v_mps",
+      "s0_m",
+      "t_s",
+      "s_final_m",
+      "delta_s_m",
+      "a_mps2",
+      "catatan",
+      "disimpan_pada",
+    ];
+
     const rows = history.map((row) => [
       row.id,
-      `"${row.name.replace(/"/g, '""')}"`,
+      csvCell(row.name),
       row.v,
       row.s0,
       row.t,
       row.s_final,
+      row.delta_s,
       row.a_val,
-      `"${(row.notes || "").replace(/"/g, '""')}"`,
-      `"${row.created_at}"`,
+      csvCell(row.notes || ""),
+      csvCell(row.created_at),
     ]);
 
-    const csvContent = [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `riwayat-simulasi-glb-${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
+    const csv = [headers.join(","), ...rows.map((row) => row.join(","))].join("\n");
+    download(`riwayat-glb-${today()}.csv`, csv, "text/csv;charset=utf-8;");
     sound.playSuccess();
   };
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-      {/* Header */}
-      <div
-        className="pixel-card"
-        style={{
-          padding: "16px",
-          display: "flex",
-          flexWrap: "wrap",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: "12px",
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-          <History color="#f6c453" size={22} />
-          <div>
-            <h3 style={{ fontFamily: "var(--font-ui)", fontSize: "0.75rem", color: "#fbf6e9", fontWeight: "bold" }}>
-              RIWAYAT SIMULASI FISIKA (LOG PENGUJIAN)
-            </h3>
-            <p style={{ fontFamily: "var(--font-mono)", fontSize: "1rem", color: "#8ea3c9" }}>
-              Setiap kali Anda menekan tombol 'SIMPAN RUN', parameter dan hasil kalkulasi otomatis tercatat di log riwayat
-            </p>
+    <div className="stack">
+      <div className="panel-lead" data-reveal>
+        <div className="panel-lead-text">
+          <h2>Riwayat pengujian tersimpan</h2>
+          <p>
+            Setiap kali tombol simpan ditekan di panel kontrol, parameter dan hasil hitungnya
+            masuk ke log ini. Data bisa diunduh sebagai JSON untuk diolah lanjut atau CSV untuk
+            dibuka di spreadsheet.
+          </p>
+        </div>
+
+        <div className="actions-row">
+          <button
+            type="button"
+            className="btn btn-sm"
+            onClick={() => {
+              sound.playClick();
+              void fetchHistory();
+            }}
+            disabled={loading}
+          >
+            {loading ? <Spinner size={13} /> : <RefreshCw size={13} />}
+            Muat ulang
+          </button>
+          <button type="button" className="btn btn-sm" onClick={handleExportCSV}>
+            <FileText size={13} /> CSV
+          </button>
+          <button type="button" className="btn btn-sm btn-support" onClick={handleExportJSON}>
+            <Download size={13} /> JSON
+          </button>
+        </div>
+      </div>
+
+      <Card data-reveal>
+        <CardHead
+          index="01"
+          title="Log simulasi"
+          icon={<Sheet size={15} />}
+          meta={<span>{history.length} baris</span>}
+        />
+
+        {loading && history.length === 0 ? (
+          <div className="card-body">
+            <StateBlock kind="loading" title="Memuat riwayat" text="Mengambil log dari database." />
           </div>
-        </div>
-
-        <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
-          <button onClick={() => { sound.playClick(); fetchHistory(); }} className="pixel-btn" style={{ fontSize: "0.6rem", padding: "6px 10px" }}>
-            <RefreshCw size={12} className={loading ? "animate-spin" : ""} /> REFRESH
-          </button>
-          <button onClick={handleExportCSV} className="pixel-btn pixel-btn-mint" style={{ fontSize: "0.6rem", padding: "6px 10px" }}>
-            <FileText size={12} /> EKSPOR CSV
-          </button>
-          <button onClick={handleExportJSON} className="pixel-btn pixel-btn-amber" style={{ fontSize: "0.6rem", padding: "6px 10px" }}>
-            <Download size={12} /> EKSPOR JSON
-          </button>
-        </div>
-      </div>
-
-      {/* Table Card */}
-      <div className="pixel-card" style={{ padding: "0", overflow: "hidden" }}>
-        <div className="pixel-table-wrapper">
-          <table className="pixel-table">
-            <thead>
-              <tr>
-                <th>ID</th>
-                <th>NAMA RUN</th>
-                <th>LAJU (v)</th>
-                <th>s₀ (AWAL)</th>
-                <th>WAKTU (t)</th>
-                <th>POSISI AKHIR (s)</th>
-                <th>PERCEPATAN (a)</th>
-                <th>CATATAN KASUS</th>
-                <th>WAKTU SIMPAN</th>
-                <th style={{ textAlign: "center" }}>AKSI</th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                <tr>
-                  <td colSpan={10} style={{ textAlign: "center", padding: "28px", color: "#8ea3c9", fontFamily: "var(--font-ui)", fontSize: "0.7rem" }}>
-                    MEMUAT DATA RIWAYAT...
-                  </td>
-                </tr>
-              ) : history.length === 0 ? (
-                <tr>
-                  <td colSpan={10} style={{ textAlign: "center", padding: "36px", color: "#8ea3c9" }}>
-                    <div style={{ fontFamily: "var(--font-ui)", fontSize: "0.75rem", marginBottom: "6px", color: "#f6c453" }}>
-                      BELUM ADA RIWAYAT SIMULASI
-                    </div>
-                    <div style={{ fontFamily: "var(--font-mono)", fontSize: "0.95rem" }}>
-                      Jalankan simulator di Tab 01 lalu tekan tombol 'SIMPAN RUN' untuk menyimpan data uji coba ke log riwayat.
-                    </div>
-                  </td>
-                </tr>
-              ) : (
-                history.map((row) => (
-                  <tr key={row.id}>
-                    <td style={{ fontFamily: "var(--font-mono)", color: "#f6c453" }}>#{row.id}</td>
-                    <td style={{ fontWeight: "bold" }}>{row.name}</td>
-                    <td style={{ color: "#4fc4a8", fontFamily: "var(--font-mono)" }}>{row.v.toFixed(1)} m/s</td>
-                    <td style={{ fontFamily: "var(--font-mono)" }}>{row.s0.toFixed(1)} m</td>
-                    <td style={{ fontFamily: "var(--font-mono)" }}>{row.t.toFixed(1)} s</td>
-                    <td style={{ color: "#f6c453", fontWeight: "bold", fontFamily: "var(--font-mono)" }}>
-                      {row.s_final.toFixed(2)} m
-                    </td>
-                    <td style={{ color: "#ef6f5e", fontFamily: "var(--font-mono)" }}>0.00 m/s²</td>
-                    <td style={{ color: "#8ea3c9", fontSize: "0.85rem" }}>{row.notes || "-"}</td>
-                    <td style={{ fontFamily: "var(--font-mono)", fontSize: "0.85rem", color: "#8ea3c9" }}>
-                      {row.created_at.replace("T", " ").slice(0, 19)}
-                    </td>
-                    <td style={{ textAlign: "center" }}>
-                      <button
-                        onClick={() => handleDelete(row.id)}
-                        className="pixel-btn pixel-btn-coral"
-                        style={{ padding: "3px 6px", fontSize: "0.55rem" }}
-                        title="Hapus riwayat"
-                      >
-                        <Trash2 size={11} />
-                      </button>
-                    </td>
+        ) : error ? (
+          <div className="card-body">
+            <StateBlock
+              kind="error"
+              title="Riwayat tidak bisa dimuat"
+              text={error}
+              action={
+                <button type="button" className="btn btn-sm" onClick={() => void fetchHistory()}>
+                  Coba lagi
+                </button>
+              }
+            />
+          </div>
+        ) : history.length === 0 ? (
+          <div className="card-body">
+            <StateBlock
+              kind="empty"
+              title="Belum ada riwayat"
+              text="Jalankan simulasi di tab Simulator lalu tekan Simpan untuk mencatat hasil pertama."
+            />
+          </div>
+        ) : (
+          <div className="card-body" style={{ padding: 0 }}>
+            <div className="table-wrap">
+              <div className="table-hint">Geser tabel ke samping untuk melihat semua kolom</div>
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th scope="col">ID</th>
+                    <th scope="col">Nama run</th>
+                    <th scope="col">v</th>
+                    <th scope="col">s₀</th>
+                    <th scope="col">t</th>
+                    <th scope="col">s akhir</th>
+                    <th scope="col">a</th>
+                    <th scope="col">Catatan</th>
+                    <th scope="col">Disimpan</th>
+                    <th scope="col">Aksi</th>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
+                </thead>
+                <tbody>
+                  {history.map((row) => (
+                    <tr key={row.id}>
+                      <td className="is-num is-core">#{row.id}</td>
+                      <td>{row.name}</td>
+                      <td className="is-num is-support">{num(row.v, 1)} m/s</td>
+                      <td className="is-num">{num(row.s0, 1)} m</td>
+                      <td className="is-num">{num(row.t, 1)} s</td>
+                      <td className="is-num is-core">{num(row.s_final, 2)} m</td>
+                      <td className="is-num is-dim">{num(row.a_val, 2)} m/s²</td>
+                      <td className="is-dim">{row.notes || "—"}</td>
+                      <td className="is-dim is-num">{stamp(row.created_at)}</td>
+                      <td>
+                        {confirmId === row.id ? (
+                          <button
+                            type="button"
+                            className="btn-icon is-confirm"
+                            disabled={deleting === row.id}
+                            onClick={() => void handleDelete(row.id)}
+                          >
+                            Hapus
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            className="btn-icon is-danger"
+                            aria-label={`Hapus riwayat ${row.id}`}
+                            title="Hapus riwayat ini"
+                            onClick={() => {
+                              sound.playClick();
+                              setConfirmId(row.id);
+                            }}
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </Card>
     </div>
   );
 };
+
+export default HistoryPanel;

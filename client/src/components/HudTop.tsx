@@ -1,6 +1,6 @@
-import { Sparkles, Volume2, VolumeX, Sun, Moon } from "lucide-react";
+import { Moon, Sun, Volume2, VolumeX, ScanLine } from "lucide-react";
 import { sound } from "../utils/audio";
-
+import { num } from "../utils/format";
 
 interface HudTopProps {
   isRunning: boolean;
@@ -27,7 +27,9 @@ export const HudTop: React.FC<HudTopProps> = ({
   sfxEnabled,
   onToggleSfx,
 }) => {
-  const progressPct = Math.min(100, Math.max(0, (timeCurrent / (timeTarget || 1)) * 100));
+  const progress = timeTarget > 0 ? Math.min(100, Math.max(0, (timeCurrent / timeTarget) * 100)) : 0;
+  const state = isRunning ? "running" : isFinished ? "finished" : "standby";
+  const stateLabel = isRunning ? "Berjalan" : isFinished ? "Selesai" : "Siaga";
 
   const handleSfxClick = () => {
     sound.enabled = !sfxEnabled;
@@ -38,109 +40,71 @@ export const HudTop: React.FC<HudTopProps> = ({
   };
 
   return (
-    <header className="hud-header">
-      {/* 2px Neon Progress Bar at the very top */}
+    <header className="hud">
       <div
-        className="hud-progress-line"
-        style={{
-          width: `${progressPct}%`,
-          background: isFinished ? "#4fc4a8" : "#f6c453",
-          boxShadow: isFinished ? "0 0 10px #4fc4a8" : "0 0 10px #f6c453",
-        }}
-      />
+        className={`hud-progress ${isFinished ? "is-complete" : ""}`}
+        role="progressbar"
+        aria-label="Kemajuan simulasi"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={Math.round(progress)}
+      >
+        <span style={{ width: `${progress}%` }} />
+      </div>
 
-      <div className="hud-inner">
-        {/* Left: Brand & Topic Title */}
-        <div className="hud-brand">
-          <img
-            src="/pixel-icons/logo.png"
-            alt="Logo Fisika GLB"
-            style={{
-              width: "28px",
-              height: "28px",
-              objectFit: "contain",
-              imageRendering: "pixelated",
-              filter: "drop-shadow(0 0 5px rgba(79, 196, 168, 0.6))",
-            }}
-          />
-          <div>
-            <div className="hud-brand-title">■ SIMULASI / LAB KINEMATIKA GLB</div>
-            <div className="hud-brand-sub">FISIKA DASAR • TEKNIK INFORMATIKA (PBL 1)</div>
+      <div className="hud-main">
+        <div className="hud-id">
+          <img src="/pixel-icons/logo.png" alt="" className="hud-logo" />
+          <div className="hud-id-text">
+            <span className="hud-kicker">LAB KINEMATIKA / GLB</span>
+            <h1 className="hud-title">Simulasi Gerak Lurus Beraturan</h1>
           </div>
         </div>
 
-        {/* Center: Realtime Running Status Pill */}
-        <div className="hud-status-pill">
-          <span style={{ color: "#8ea3c9", fontFamily: "var(--font-ui)", fontSize: "0.6rem" }}>STATUS:</span>
-          {isRunning ? (
-            <span style={{ color: "#4fc4a8", fontFamily: "var(--font-ui)", fontWeight: "bold", fontSize: "0.65rem" }}>
-              ● RUNNING
-            </span>
-          ) : isFinished ? (
-            <span style={{ color: "#f6c453", fontFamily: "var(--font-ui)", fontWeight: "bold", fontSize: "0.65rem" }}>
-              TARGET REACHED ★
-            </span>
-          ) : (
-            <span style={{ color: "#8ea3c9", fontFamily: "var(--font-ui)", fontSize: "0.65rem" }}>STANDBY</span>
-          )}
-          <span style={{ color: "#2b3350" }}>|</span>
-          <span style={{ fontFamily: "var(--font-mono)", fontSize: "1.05rem", color: "#fbf6e9" }}>
-            {timeCurrent.toFixed(1)}s / {timeTarget.toFixed(1)}s
+        <div className="hud-status" data-state={state} aria-live="polite">
+          <span className="hud-dot" aria-hidden="true" />
+          <span className="hud-state">{stateLabel}</span>
+          <span className="hud-clock">
+            {num(timeCurrent, 1)}
+            <span> / {num(timeTarget, 1)} s</span>
           </span>
         </div>
 
-        {/* Right: Controls & Toggles */}
-        <div className="hud-actions">
-          {/* Day / Night Environment Toggle */}
+        <div className="hud-tools">
           <button
+            type="button"
+            className="tool-btn"
+            aria-pressed={isNightMode}
+            aria-label="Tema malam"
+            title="Ganti tema siang / malam"
             onClick={onToggleNightMode}
-            className="pixel-btn"
-            style={{ padding: "6px 10px", minHeight: "30px", fontSize: "0.6rem" }}
-            title="Ganti Tema Siang / Malam (Ala Frame Video 180s vs 0.3s)"
           >
-            {isNightMode ? (
-              <>
-                <Moon size={12} color="#5b8dd9" /> MALAM
-              </>
-            ) : (
-              <>
-                <Sun size={12} color="#f6c453" /> SIANG
-              </>
-            )}
+            {isNightMode ? <Moon size={14} /> : <Sun size={14} />}
+            <span>{isNightMode ? "Malam" : "Siang"}</span>
           </button>
 
-          {/* 8-bit Audio Toggle */}
           <button
+            type="button"
+            className="tool-btn"
+            aria-pressed={sfxEnabled}
+            aria-label="Efek suara"
+            title="Nyalakan / matikan efek suara 8-bit"
             onClick={handleSfxClick}
-            className="pixel-btn"
-            style={{
-              padding: "6px 10px",
-              minHeight: "30px",
-              fontSize: "0.6rem",
-              borderColor: sfxEnabled ? "#4fc4a8" : "#2b3350",
-              color: sfxEnabled ? "#4fc4a8" : "#8ea3c9",
-            }}
-            title="Toggle 8-bit Sound Effects"
           >
-            {sfxEnabled ? <Volume2 size={12} /> : <VolumeX size={12} />}
-            SFX: {sfxEnabled ? "ON" : "OFF"}
+            {sfxEnabled ? <Volume2 size={14} /> : <VolumeX size={14} />}
+            <span>Suara</span>
           </button>
 
-          {/* CRT Scanline Toggle */}
           <button
+            type="button"
+            className="tool-btn"
+            aria-pressed={scanlinesEnabled}
+            aria-label="Efek layar CRT"
+            title="Nyalakan / matikan scanline CRT"
             onClick={onToggleScanlines}
-            className="pixel-btn"
-            style={{
-              padding: "6px 10px",
-              minHeight: "30px",
-              fontSize: "0.6rem",
-              borderColor: scanlinesEnabled ? "#f6c453" : "#2b3350",
-              color: scanlinesEnabled ? "#f6c453" : "#8ea3c9",
-            }}
-            title="Toggle Retro CRT Scanline Effect"
           >
-            <Sparkles size={12} />
-            CRT: {scanlinesEnabled ? "ON" : "OFF"}
+            <ScanLine size={14} />
+            <span>CRT</span>
           </button>
         </div>
       </div>

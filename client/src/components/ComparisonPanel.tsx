@@ -1,241 +1,259 @@
 import React, { useEffect, useState } from "react";
-import { GitCompare, Lightbulb, CheckCircle2, Layers } from "lucide-react";
-import { API_BASE } from "../utils/config";
+import { CheckCircle2, FlaskConical, GitCompare, Lightbulb, Sigma } from "lucide-react";
+import { apiGet } from "../utils/api";
+import { num } from "../utils/format";
+import { Badge, Card, CardHead, StateBlock } from "./ui";
 
 interface ComparisonData {
   pillar_overview: {
     topic: string;
-    velocity_theory_mps: number;
-    velocity_simulation_mps: number;
-    velocity_experiment_avg_mps: number;
-    overall_error_percentage: number;
+    velocity_theory_mps: number | null;
+    velocity_simulation_mps: number | null;
+    velocity_experiment_avg_mps: number | null;
+    overall_error_percentage: number | null;
   };
   comparison_table: {
     test_no: number;
-    time_avg_s: number;
-    s_theory_m: number;
-    s_simulation_m: number;
-    s_experiment_m: number;
-    error_percentage: number;
+    time_avg_s: number | null;
+    s_theory_m: number | null;
+    s_simulation_m: number | null;
+    s_experiment_m: number | null;
+    error_percentage: number | null;
     notes: string;
   }[];
   scientific_discussion: string[];
 }
 
+function errorTone(value: number | null): "ok" | "warn" | "alert" | "muted" {
+  if (value === null || !Number.isFinite(value)) return "muted";
+  if (value < 2) return "ok";
+  if (value < 5) return "warn";
+  return "alert";
+}
+
+function errorLabel(value: number | null): string {
+  if (value === null || !Number.isFinite(value)) return "Belum dihitung";
+  if (value < 2) return "Selisih kecil";
+  if (value < 5) return "Selisih wajar";
+  return "Perlu ditinjau";
+}
+
 export const ComparisonPanel: React.FC = () => {
   const [data, setData] = useState<ComparisonData | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string>("");
 
   useEffect(() => {
-    fetch(`${API_BASE}/api/comparison`)
-      .then((res) => res.json())
+    let cancelled = false;
+
+    apiGet<ComparisonData>("/api/comparison")
       .then((json) => {
-        setData(json);
-        setLoading(false);
+        if (!cancelled) {
+          setData(json);
+          setError("");
+        }
       })
-      .catch((err) => {
-        console.error("Gagal load comparison:", err);
-        setLoading(false);
+      .catch((err: unknown) => {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : "Gagal memuat perbandingan.");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
       });
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   if (loading) {
     return (
-      <div className="pixel-card" style={{ padding: "32px", textAlign: "center", color: "#8ea3c9", fontFamily: "var(--font-ui)", fontSize: "0.7rem" }}>
-        MEMUAT DATA PERBANDINGAN 3 PILAR...
-      </div>
+      <Card data-reveal>
+        <div className="card-body">
+          <StateBlock
+            kind="loading"
+            title="Memuat perbandingan tiga pilar"
+            text="Menghimpun nilai teori, simulasi, dan praktikum dari server."
+          />
+        </div>
+      </Card>
     );
   }
 
-  if (!data) {
+  if (error || !data) {
     return (
-      <div className="pixel-card" style={{ padding: "24px", textAlign: "center", color: "#ef6f5e", fontFamily: "var(--font-ui)", fontSize: "0.7rem" }}>
-        TIDAK DAPAT MENGHUBUNGI API BACKEND ELYSIA.
-      </div>
+      <Card accent="coral" data-reveal>
+        <div className="card-body">
+          <StateBlock
+            kind="error"
+            title="Data perbandingan tidak tersedia"
+            text={error || "Server tidak mengembalikan data."}
+          />
+        </div>
+      </Card>
     );
   }
+
+  const overview = data.pillar_overview;
+  const theory = overview.velocity_theory_mps;
+  const simulation = overview.velocity_simulation_mps;
+  const experiment = overview.velocity_experiment_avg_mps;
+  const overallError = overview.overall_error_percentage;
+
+  const deltaSimulation =
+    theory !== null && simulation !== null ? Math.abs(simulation - theory) : null;
+  const deltaExperiment =
+    theory !== null && experiment !== null ? Math.abs(experiment - theory) : null;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-      {/* 1. HEADER MODUL BAGIAN I */}
-      <div
-        className="pixel-card pixel-card-accent-mint"
-        style={{
-          padding: "16px",
-          display: "flex",
-          flexWrap: "wrap",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: "12px",
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-          <GitCompare color="#4fc4a8" size={24} />
-          <div>
-            <h3 style={{ fontFamily: "var(--font-ui)", fontSize: "0.8rem", color: "#fbf6e9", fontWeight: "bold" }}>
-              ANALISIS KOMPARASI 3 PILAR (PANDUAN PBL BAGIAN I)
-            </h3>
-            <p style={{ fontFamily: "var(--font-mono)", fontSize: "1.05rem", color: "#8ea3c9" }}>
-              Perbandingan Saintifik Triangulasi: Persamaan Teori vs Simulasi Komputer (Produk 1) vs Praktikum Nyata (Produk 3)
+    <div className="stack">
+      <div className="panel-lead" data-reveal>
+        <div className="panel-lead-text">
+          <h2>Triangulasi tiga pilar kinematika</h2>
+          <p>
+            Satu besaran yang sama diukur dengan tiga cara berbeda: persamaan teori, simulasi
+            komputer, dan praktikum dengan stopwatch. Selisih antar pilar menjadi bahan diskusi,
+            bukan angka yang dipaksa nol.
+          </p>
+        </div>
+        <div className="actions-row">
+          <Badge tone={errorTone(overallError)}>
+            {errorLabel(overallError)} · {num(overallError, 2)}%
+          </Badge>
+        </div>
+      </div>
+
+      <div className="triple">
+        <Card accent="amber" data-reveal>
+          <CardHead index="01" title="Teori analitis" icon={<Sigma size={15} />} meta={<span>a = 0</span>} />
+          <div className="card-body">
+            <div className="calc-formula is-core">{num(theory, 2)} m/s</div>
+            <div className="calc-label" style={{ marginTop: "6px" }}>
+              Kecepatan acuan
+            </div>
+            <p className="calc-note">
+              Dari persamaan s = s₀ + v·t pada kondisi tanpa percepatan. Nilai ini menjadi
+              pembanding tetap bagi dua pilar lainnya.
             </p>
           </div>
-        </div>
+        </Card>
 
-        <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
-          <div style={{ padding: "6px 12px", backgroundColor: "#0b0d17", border: "1px solid #2b3350" }}>
-            <span style={{ fontSize: "0.55rem", color: "#8ea3c9", fontFamily: "var(--font-ui)", display: "block" }}>RATA-RATA GALAT</span>
-            <span style={{ fontFamily: "var(--font-mono)", fontSize: "1.3rem", color: "#f6c453", fontWeight: "bold" }}>
-              {data.pillar_overview.overall_error_percentage}%
-            </span>
-          </div>
-          <div style={{ padding: "6px 12px", backgroundColor: "#0b0d17", border: "1px solid #2b3350" }}>
-            <span style={{ fontSize: "0.55rem", color: "#8ea3c9", fontFamily: "var(--font-ui)", display: "block" }}>STATUS KELAYAKAN</span>
-            <span style={{ fontFamily: "var(--font-mono)", fontSize: "1.2rem", color: "#4fc4a8", fontWeight: "bold" }}>
-              PRESISI TINGGI
-            </span>
-          </div>
-        </div>
-      </div>
-
-      {/* 2. OVERVIEW 3 CARDS */}
-      <div className="grid-3col">
-        {/* Pilar 1: Teori */}
-        <div className="pixel-card" style={{ padding: "16px" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px", color: "#f6c453" }}>
-            <Layers size={16} />
-            <span style={{ fontFamily: "var(--font-ui)", fontSize: "0.7rem", fontWeight: "bold" }}>
-              [ PILAR 1 ] TEORI ANALITIS
-            </span>
-          </div>
-          <div style={{ fontFamily: "var(--font-mono)", fontSize: "1.3rem", color: "#fbf6e9", marginBottom: "6px" }}>
-            v = {data.pillar_overview.velocity_theory_mps.toFixed(2)} m/s
-          </div>
-          <p style={{ fontSize: "0.95rem", color: "#8ea3c9", fontFamily: "var(--font-mono)", lineHeight: 1.5 }}>
-            Berdasarkan Hukum I Newton pada kondisi vakum ideal tanpa gaya gesek. Rumus: s = v * t dengan a = 0.
-          </p>
-        </div>
-
-        {/* Pilar 2: Simulasi */}
-        <div className="pixel-card pixel-card-accent-mint" style={{ padding: "16px" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px", color: "#4fc4a8" }}>
-            <CheckCircle2 size={16} />
-            <span style={{ fontFamily: "var(--font-ui)", fontSize: "0.7rem", fontWeight: "bold" }}>
-              [ PILAR 2 ] SIMULASI WEB (PRODUK 1)
-            </span>
-          </div>
-          <div style={{ fontFamily: "var(--font-mono)", fontSize: "1.3rem", color: "#4fc4a8", marginBottom: "6px" }}>
-            v = {data.pillar_overview.velocity_simulation_mps.toFixed(2)} m/s
-          </div>
-          <p style={{ fontSize: "0.95rem", color: "#8ea3c9", fontFamily: "var(--font-mono)", lineHeight: 1.5 }}>
-            Hasil diskritisasi engine Canvas 60 FPS pada aplikasi ini. Deviasi terhadap teori adalah 0.00% (Identik sempurna).
-          </p>
-        </div>
-
-        {/* Pilar 3: Praktikum */}
-        <div className="pixel-card pixel-card-accent-coral" style={{ padding: "16px" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px", color: "#ef6f5e" }}>
-            <Lightbulb size={16} />
-            <span style={{ fontFamily: "var(--font-ui)", fontSize: "0.7rem", fontWeight: "bold" }}>
-              [ PILAR 3 ] PRAKTIKUM RIIL (PRODUK 3)
-            </span>
-          </div>
-          <div style={{ fontFamily: "var(--font-mono)", fontSize: "1.3rem", color: "#ef6f5e", marginBottom: "6px" }}>
-            v̄ = {data.pillar_overview.velocity_experiment_avg_mps.toFixed(4)} m/s
-          </div>
-          <p style={{ fontSize: "0.95rem", color: "#8ea3c9", fontFamily: "var(--font-mono)", lineHeight: 1.5 }}>
-            Diperoleh dari rata-rata pengujian stopwatch mobil mainan di lintasan 20 cm - 100 cm. Memiliki galat alami ~1.5%.
-          </p>
-        </div>
-      </div>
-
-      {/* 3. TABEL KOMPARASI LENGKAP */}
-      <div className="pixel-card" style={{ padding: "0", overflow: "hidden" }}>
-        <div style={{ padding: "12px 16px", backgroundColor: "#141827", borderBottom: "1px solid #2b3350" }}>
-          <span style={{ fontFamily: "var(--font-ui)", fontSize: "0.68rem", color: "#f6c453", fontWeight: "bold" }}>
-            TABEL RESMI PERBANDINGAN HASIL UJI KINEMATIKA (PBL 1)
-          </span>
-        </div>
-
-        <div className="pixel-table-wrapper">
-          <table className="pixel-table">
-            <thead>
-              <tr>
-                <th>UJI #</th>
-                <th>WAKTU RATA-RATA (t̄)</th>
-                <th>JARAK TEORI (s_teori)</th>
-                <th>SIMULASI KOMPUTER</th>
-                <th>EKSPERIMEN NYATA (s_eks)</th>
-                <th>DEVIAZI GALAT (%)</th>
-                <th>CATATAN PENGUJIAN</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.comparison_table.map((row) => (
-                <tr key={row.test_no}>
-                  <td style={{ fontFamily: "var(--font-mono)", color: "#f6c453" }}>#{row.test_no}</td>
-                  <td style={{ fontFamily: "var(--font-mono)" }}>{row.time_avg_s.toFixed(3)} s</td>
-                  <td style={{ fontFamily: "var(--font-mono)" }}>{row.s_theory_m.toFixed(3)} m</td>
-                  <td style={{ color: "#4fc4a8", fontFamily: "var(--font-mono)" }}>{row.s_simulation_m.toFixed(3)} m</td>
-                  <td style={{ color: "#ef6f5e", fontWeight: "bold", fontFamily: "var(--font-mono)" }}>
-                    {row.s_experiment_m.toFixed(2)} m
-                  </td>
-                  <td>
-                    <span
-                      style={{
-                        padding: "2px 6px",
-                        backgroundColor: "rgba(246, 196, 83, 0.15)",
-                        border: "1px solid #f6c453",
-                        color: "#f6c453",
-                        fontFamily: "var(--font-mono)",
-                        fontSize: "0.95rem",
-                      }}
-                    >
-                      {row.error_percentage.toFixed(2)}%
-                    </span>
-                  </td>
-                  <td style={{ color: "#8ea3c9", fontSize: "0.85rem" }}>{row.notes}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* 4. PEMBAHASAN SAINTIFIK & PENYEBAB GALAT */}
-      <div className="pixel-card pixel-card-accent-amber" style={{ padding: "16px" }}>
-        <h4
-          style={{
-            fontFamily: "var(--font-ui)",
-            fontSize: "0.72rem",
-            color: "#f6c453",
-            marginBottom: "12px",
-            display: "flex",
-            alignItems: "center",
-            gap: "8px",
-          }}
-        >
-          <Lightbulb size={16} /> PEMBAHASAN SAINTIFIK & ANALISIS SUMBER GALAT
-        </h4>
-
-        <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-          {data.scientific_discussion.map((item, idx) => (
-            <div
-              key={idx}
-              style={{
-                padding: "10px 12px",
-                backgroundColor: "rgba(11, 13, 23, 0.65)",
-                border: "1px solid #2b3350",
-                fontSize: "0.95rem",
-                color: "#e8e3d3",
-                fontFamily: "var(--font-mono)",
-                lineHeight: 1.5,
-              }}
-            >
-              {item}
+        <Card accent="mint" data-reveal>
+          <CardHead
+            index="02"
+            title="Simulasi web"
+            icon={<CheckCircle2 size={15} />}
+            meta={<span>produk 1</span>}
+          />
+          <div className="card-body">
+            <div className="calc-formula is-support">{num(simulation, 2)} m/s</div>
+            <div className="calc-label" style={{ marginTop: "6px" }}>
+              Selisih terhadap teori
             </div>
-          ))}
-        </div>
+            <p className="calc-note">
+              {deltaSimulation === null
+                ? "Belum ada nilai pembanding."
+                : `${num(deltaSimulation, 4)} m/s. Simulasi memakai rumus yang sama, jadi selisih yang tersisa menunjukkan galat pembulatan mesin.`}
+            </p>
+          </div>
+        </Card>
+
+        <Card data-reveal>
+          <CardHead
+            index="03"
+            title="Praktikum nyata"
+            icon={<FlaskConical size={15} />}
+            meta={<span>produk 3</span>}
+          />
+          <div className="card-body">
+            <div className="calc-formula">{num(experiment, 4)} m/s</div>
+            <div className="calc-label" style={{ marginTop: "6px" }}>
+              Selisih terhadap teori
+            </div>
+            <p className="calc-note">
+              {deltaExperiment === null
+                ? "Belum ada data pengukuran."
+                : `${num(deltaExperiment, 4)} m/s. Selisih ini wajar muncul dari reaksi tangan saat menekan stopwatch dan gesekan permukaan lintasan.`}
+            </p>
+          </div>
+        </Card>
       </div>
+
+      <Card data-reveal>
+        <CardHead
+          index="04"
+          title="Tabel perbandingan per uji"
+          icon={<GitCompare size={15} />}
+          meta={<span>{data.comparison_table.length} baris</span>}
+        />
+        {data.comparison_table.length === 0 ? (
+          <div className="card-body">
+            <StateBlock
+              kind="empty"
+              title="Belum ada baris perbandingan"
+              text="Tambahkan data praktikum agar tabel ini terisi."
+            />
+          </div>
+        ) : (
+          <div className="card-body" style={{ padding: 0 }}>
+            <div className="table-wrap">
+              <div className="table-hint">Geser tabel ke samping untuk melihat semua kolom</div>
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th scope="col">Uji</th>
+                    <th scope="col">t̄</th>
+                    <th scope="col">s teori</th>
+                    <th scope="col">s simulasi</th>
+                    <th scope="col">s eksperimen</th>
+                    <th scope="col">Galat</th>
+                    <th scope="col">Catatan</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.comparison_table.map((row) => {
+                    const highError = row.error_percentage !== null && row.error_percentage >= 5;
+                    return (
+                      <tr key={row.test_no}>
+                        <td className="is-num is-core">#{row.test_no}</td>
+                        <td className="is-num">{num(row.time_avg_s, 3)} s</td>
+                        <td className="is-num">{num(row.s_theory_m, 3)} m</td>
+                        <td className="is-num is-support">{num(row.s_simulation_m, 3)} m</td>
+                        <td className="is-num">{num(row.s_experiment_m, 2)} m</td>
+                        <td className={`is-num ${highError ? "is-alert" : "is-dim"}`}>
+                          {num(row.error_percentage, 2)}%
+                        </td>
+                        <td className="is-dim">{row.notes || "—"}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </Card>
+
+      <Card accent="mint" data-reveal>
+        <CardHead
+          index="05"
+          title="Pembahasan sumber selisih"
+          icon={<Lightbulb size={15} />}
+          meta={<span>{data.scientific_discussion.length} poin</span>}
+        />
+        <div className="card-body">
+          <div className="stack" style={{ gap: "8px" }}>
+            {data.scientific_discussion.map((item, index) => (
+              <div className="note is-support" key={index}>
+                {item}
+              </div>
+            ))}
+          </div>
+        </div>
+      </Card>
     </div>
   );
 };
+
+export default ComparisonPanel;
